@@ -19,8 +19,8 @@ const GROUND_Y = 500;
 const SHADOW_Y = GROUND_Y - 3;
 const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
-const BAKERY_HEIGHT = 440;
-const BAKERY_BOTTOM_Y = 475;
+const BAKERY_HEIGHT = 540;
+const BAKERY_BOTTOM_Y = 540;
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
 const OFFICE_BOTTOM_Y = H;
