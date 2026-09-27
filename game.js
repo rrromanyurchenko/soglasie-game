@@ -22,7 +22,7 @@ const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 const BAKERY_HEIGHT = 540;
 // Низ картинки не совпадает с линией мостовой.
 const BAKERY_BOTTOM_Y = 574;
-const BAKERY_START_OVERLAP = 75;
+const BAKERY_START_OVERLAP = 300; // Вход остаётся рядом с героем при старте.
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
 const OFFICE_BOTTOM_Y = H;
@@ -1313,7 +1313,7 @@ function startRace(scene, heroKey) {
     setHeroFrame(1);
 
     playerShadow
-        .setPosition(player.x, SHADOW_Y)
+        .setPosition(player.x + 12, SHADOW_Y)
         .setVisible(true);
 
     warningText.setVisible(false);
@@ -1488,13 +1488,13 @@ function update(time, delta) {
         attractBonuses(this);
     }
 
-    // Чайка не появляется одновременно с другим препятствием.
+    // При приближении птицы временно отложим очередное препятствие.
+    // Иначе частые препятствия могут бесконечно блокировать атаку чайки.
     if (
         realDistance >= nextBird &&
         realDistance < TARGET_DISTANCE - 150 &&
         !birdAttackPending &&
-        birds.countActive() === 0 &&
-        realDistance - lastObstacleDistance > 95
+        birds.countActive() === 0
     ) {
         launchBird(this);
         lastBirdDistance = realDistance;
@@ -1506,7 +1506,8 @@ function update(time, delta) {
         realDistance < TARGET_DISTANCE - 100 &&
         !birdAttackPending &&
         birds.countActive() === 0 &&
-        realDistance - lastBirdDistance > 95
+        realDistance - lastBirdDistance > 95 &&
+        nextBird - realDistance > 110
     ) {
         spawnChallenge(this);
     }
@@ -1528,7 +1529,8 @@ function update(time, delta) {
 function syncPlayerView() {
     playerView.setPosition(player.x, player.y);
 
-    playerShadow.x = player.x;
+    // У рисунка бегущего героя стопы слегка правее центра спрайта.
+    playerShadow.x = player.x + 12;
     playerShadow.y = SHADOW_Y;
 
     const grounded =
@@ -1536,18 +1538,14 @@ function syncPlayerView() {
         player.body.blocked.down;
 
     if (grounded) {
-        playerShadow.setDisplaySize(isSliding ? 65 : 52, 12);
-        playerShadow.setAlpha(0.36);
+        playerShadow.setDisplaySize(isSliding ? 90 : 80, 9);
+        playerShadow.setAlpha(0.28);
     } else {
         const altitude = Math.max(0, GROUND_Y - player.y);
-        const factor = Math.max(0.35, 1 - altitude / 260);
+        const factor = Math.max(0.42, 1 - altitude / 280);
 
-        playerShadow.setDisplaySize(
-            52 * factor,
-            12 * factor
-        );
-
-        playerShadow.setAlpha(0.36 * factor);
+        playerShadow.setDisplaySize(80 * factor, 9 * factor);
+        playerShadow.setAlpha(0.28 * factor);
     }
 }
 
@@ -1679,7 +1677,11 @@ function createPlatform(scene, key, width, height, hitWidth, hitHeight, offsetY 
     platform.setImmovable(true);
     platform.setVelocityX(-baseSpeed);
     platform.obstacleType = 'bottom';
-    attachShadow(scene, platform, key === 'obs_barrier' ? 54 : width * 0.78);
+    // У барьера собственная тень уже есть в изображении/на мостовой;
+    // отдельный овал под ним выглядел как посторонний предмет.
+    if (key !== 'obs_barrier') {
+        attachShadow(scene, platform, width * 0.78);
+    }
     return platform;
 }
 
@@ -1716,9 +1718,10 @@ function spawnBonus(scene) {
                 ? 'bonus_shield'
                 : 'bonus_heart';
 
+    // На ровной дороге предмет недоступен без прыжка; с паллеты достать можно.
     const y = Phaser.Math.RND.pick([
-        GROUND_Y - 170,
-        GROUND_Y - 205
+        GROUND_Y - 205,
+        GROUND_Y - 225
     ]);
 
     const bonus = bonuses
@@ -1762,7 +1765,9 @@ function attractBonuses(scene) {
             bonus.y
         );
 
-        if (distance < 185) {
+        // Магнит работает при прыжке и при беге по платформе,
+        // но не стягивает высокие бонусы на ровную дорогу.
+        if (distance < 185 && player.y < GROUND_Y - 30) {
             scene.physics.moveToObject(bonus, player, 380);
             bonus.isMagnetized = true;
         }
@@ -1793,19 +1798,27 @@ function launchBird(scene) {
     // Чередуем виды атаки: сначала обучающий низкий пролёт.
     const mode = birdAttackNumber++ % 2 === 0 ? 'low' : 'dive';
     birdAttackPending = true;
-    warningText.setVisible(true);
+    // Предупреждение требуется для атаки сзади. Для пикирования
+    // птица появляется видимой сверху справа без этой надписи.
+    warningText.setVisible(mode === 'low');
     SoundFx.gull();
 
-    scene.time.delayedCall(1200, () => {
+    scene.time.delayedCall(mode === 'low' ? 1200 : 650, () => {
         if (thisRace !== raceId || gameState !== 'PLAYING') return;
         birdAttackPending = false;
         warningText.setVisible(false);
 
         if (mode === 'low') {
-            // Летит СЛЕВА НАПРАВО над головой присевшего героя.
-            // Даже при пограничном контакте подкат защищает от птицы.
-            const bird = createBird(scene, -80, GROUND_Y - 68, 'low');
-            bird.setVelocityX(Math.max(410, baseSpeed + 150));
+            // Появляется позади героя, а не за краем широкого экрана:
+            // игрок видит атаку почти сразу после предупреждения.
+            // При пограничном контакте подкат защищает от птицы.
+            const bird = createBird(
+                scene,
+                Math.max(-75, player.x - 260),
+                GROUND_Y - 68,
+                'low'
+            );
+            bird.setVelocityX(Math.max(440, baseSpeed + 165));
         } else {
             const startX = Math.max(gameWidth + 65, player.x + 470);
             const bird = createBird(scene, startX, 105, 'dive');
