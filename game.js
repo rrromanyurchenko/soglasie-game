@@ -1,0 +1,2286 @@
+'use strict';
+
+/* «Согласие» — праздничный раннер. Phaser 3.60. */
+
+const WIN_FORM_URL = 'https://33.soglasie.ru/win';
+
+const PROMO_URL =
+    'https://www.soglasie.ru/puteshestviya/kalkulyator-strahovaniya-vyezjayushih-za-rubej/' +
+    '?utm_campaign=dr_33&utm_medium=igra_dr&utm_content=promo_code_vzr';
+
+const BASE_W = 960;
+const H = 540;
+const BG_W = 960;
+const TARGET_DISTANCE = 3300;
+const METERS_PER_PIXEL = 0.08;
+
+const ROAD_VISIBLE_HEIGHT = 155;
+const GROUND_Y = 500;
+const SHADOW_Y = GROUND_Y - 3;
+const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
+
+const BAKERY_CLIP_BOTTOM = 470;
+const BAKERY_HEIGHT = 530;
+const BAKERY_BOTTOM_Y = 500;
+const BAKERY_CENTER_X = 125;
+
+const OFFICE_HEIGHT = 475;
+const OFFICE_BOTTOM_Y = 462;
+
+/*
+ * Прежняя высота отображения была около 116 игровых пикселей.
+ * Теперь 155. Одинаковый scaleX/scaleY для ВСЕХ кадров героя.
+ */
+const HERO_DISPLAY_HEIGHT = 155;
+
+const HEROES = {
+    artem: {
+        prefix: 'p',
+        gravityY: 1100,
+        jumpForce: -620,
+        hearts: 1,
+        boxes: 0
+    },
+    maksim: {
+        prefix: 'o',
+        gravityY: 1600,
+        jumpForce: -680,
+        hearts: 1,
+        boxes: 0
+    },
+    viktoria: {
+        prefix: 'g',
+        gravityY: 1600,
+        jumpForce: -680,
+        hearts: 1,
+        boxes: 1
+    }
+};
+
+const ASSETS = {
+    bg_seg_1: 'https://static.tildacdn.com/tild3137-3365-4137-b064-653761333736/1.jpg',
+    bg_seg_2: 'https://static.tildacdn.com/tild3566-3564-4338-a536-376362373339/2.jpg',
+    bg_seg_3: 'https://static.tildacdn.com/tild3234-6237-4439-b565-363361613462/3.jpg',
+    bg_seg_4: 'https://static.tildacdn.com/tild3065-3265-4238-b739-653932643830/4.jpg',
+    bg_seg_5: 'https://static.tildacdn.com/tild3339-3938-4362-b836-326563313361/5.jpg',
+    bg_seg_6: 'https://static.tildacdn.com/tild3432-6237-4562-a534-356365623136/6.jpg',
+    bg_seg_7: 'https://static.tildacdn.com/tild3033-3763-4361-a561-373239303463/7.jpg',
+
+    road_tex: 'https://static.tildacdn.com/tild6432-3031-4361-b634-616538333964/road.png',
+    bakery: 'https://static.tildacdn.com/tild3730-3136-4934-b635-373562643533/__.png',
+    office: 'https://static.tildacdn.com/tild6434-3461-4932-a466-643136336132/-_.png',
+    logo_33: 'https://static.tildacdn.com/tild3362-3565-4136-a661-313237623834/_6.png',
+
+    choose_screen: 'https://static.tildacdn.com/tild6132-3837-4839-b332-383362333666/choose.png',
+    die_screen: 'https://static.tildacdn.com/tild3339-6465-4262-b937-346633313137/die.png',
+    win_screen: 'https://static.tildacdn.com/tild3562-6264-4561-b131-363764646361/win.png',
+
+    hud_bar: 'https://static.tildacdn.com/tild3439-3938-4165-b038-653031613135/distance_time.png',
+    hud_heart: 'https://static.tildacdn.com/tild3161-3133-4566-a435-353934316363/heart.png',
+    hud_shield: 'https://static.tildacdn.com/tild3236-3665-4361-b930-643064643635/shield.png',
+    hud_box: 'https://static.tildacdn.com/tild3537-3734-4430-b865-613432363734/box.png',
+
+    obs_barrier: 'https://static.tildacdn.com/tild6461-3135-4230-a637-333236326137/barrier.png',
+    obs_pallet: 'https://static.tildacdn.com/tild3338-3865-4665-b139-643062306537/tiles.png',
+    obs_scooter: 'https://static.tildacdn.com/tild3062-6131-4339-b566-666639633066/scooter.png',
+    obs_pot: 'https://static.tildacdn.com/tild6566-3334-4562-b336-343730663131/flower.png',
+
+    bird_1: 'https://static.tildacdn.com/tild6263-6166-4266-a661-623631616233/gull.png',
+    bird_2: 'https://static.tildacdn.com/tild3338-6636-4763-b961-386536343534/gull2.png',
+    bird_3: 'https://static.tildacdn.com/tild3462-3030-4236-a137-353336626536/gull3.png',
+    bird_4: 'https://static.tildacdn.com/tild6533-6230-4633-b438-303962353138/gull4.png',
+    bird_5: 'https://static.tildacdn.com/tild3833-6434-4463-b839-633430643130/gull5.png',
+
+    bonus_box: 'https://static.tildacdn.com/tild6266-3762-4931-b336-636566343761/box.png',
+    bonus_shield: 'https://static.tildacdn.com/tild3734-3066-4761-a136-643662383662/shield.png',
+    bonus_heart: 'https://static.tildacdn.com/tild3236-3161-4833-b034-646131636231/heart.png',
+
+    g1: 'https://static.tildacdn.com/tild6665-3631-4636-b265-323732303435/g1.png',
+    g2: 'https://static.tildacdn.com/tild6263-3438-4436-a365-333536303232/g2.png',
+    g3: 'https://static.tildacdn.com/tild3532-3539-4465-a338-313761613530/g3.png',
+    g4: 'https://static.tildacdn.com/tild3332-3135-4133-b934-326133353239/g4.png',
+    g5: 'https://static.tildacdn.com/tild3766-3066-4364-b938-343931326330/g5.png',
+    g6: 'https://static.tildacdn.com/tild6661-3466-4431-b336-343132636139/g6.png',
+    g7: 'https://static.tildacdn.com/tild3637-3737-4639-a130-336461653231/g7.png',
+    g8: 'https://static.tildacdn.com/tild3534-6232-4839-b865-393962316633/g8.png',
+    g9: 'https://static.tildacdn.com/tild6361-6332-4666-a338-633833633161/g9.png',
+
+    o1: 'https://static.tildacdn.com/tild6631-3736-4463-b934-653434636438/o1.png',
+    o2: 'https://static.tildacdn.com/tild6237-6333-4835-a361-306634313363/o2.png',
+    o3: 'https://static.tildacdn.com/tild6535-3764-4134-b839-393662303964/o3.png',
+    o4: 'https://static.tildacdn.com/tild6636-6532-4234-b362-346437326634/o4.png',
+    o5: 'https://static.tildacdn.com/tild3031-3231-4032-a434-326563653339/o5.png',
+    o6: 'https://static.tildacdn.com/tild6164-6238-4363-b536-633534343633/o6.png',
+    o7: 'https://static.tildacdn.com/tild3139-3764-4865-b932-336266343233/o7.png',
+    o8: 'https://static.tildacdn.com/tild6230-6336-4465-b436-393431346232/o8.png',
+    o9: 'https://static.tildacdn.com/tild3566-3739-4936-b931-623561633536/o9.png',
+
+    p1: 'https://static.tildacdn.com/tild3732-6665-4130-b939-383439316662/p1.png',
+    p2: 'https://static.tildacdn.com/tild3462-3334-4166-a130-613536616138/p2.png',
+    p3: 'https://static.tildacdn.com/tild3831-6136-4533-a166-396632303162/p3.png',
+    p4: 'https://static.tildacdn.com/tild3633-3234-4436-b738-643536356535/p4.png',
+    p5: 'https://static.tildacdn.com/tild3339-3265-4134-b332-323436353162/p5.png',
+    p6: 'https://static.tildacdn.com/tild6361-6436-4161-b764-313637393833/p6.png',
+    p7: 'https://static.tildacdn.com/tild6633-3635-4365-b630-643431333164/p7.png',
+    p8: 'https://static.tildacdn.com/tild3263-6538-4662-b365-383835376363/p8.png',
+    p9: 'https://static.tildacdn.com/tild6434-6666-4566-b133-636432383361/p9.png'
+};
+
+/* =========================== Экран =========================== */
+
+function isTouchDevice() {
+    return window.matchMedia('(pointer: coarse)').matches;
+}
+
+function viewportSize() {
+    const viewport = window.visualViewport;
+
+    return {
+        width: viewport ? viewport.width : window.innerWidth,
+        height: viewport ? viewport.height : window.innerHeight
+    };
+}
+
+function calculateWidth() {
+    const wrapper = document.getElementById('game-wrapper');
+    const rect = wrapper ? wrapper.getBoundingClientRect() : null;
+
+    const width = rect && rect.width
+        ? rect.width
+        : window.innerWidth;
+
+    const height = rect && rect.height
+        ? rect.height
+        : window.innerHeight;
+
+    return Math.round(
+        H * width / Math.max(1, height)
+    );
+}
+
+let gameWidth = calculateWidth();
+
+const config = {
+    type: Phaser.AUTO,
+    parent: 'game-container',
+    width: gameWidth,
+    height: H,
+    backgroundColor: '#0b131e',
+
+    render: {
+        antialias: true,
+        pixelArt: false,
+        resolution: Math.min(window.devicePixelRatio || 1, 2)
+    },
+
+    physics: {
+        default: 'arcade',
+        arcade: {
+            gravity: { y: 1600 },
+            debug: false
+        }
+    },
+
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        parent: 'game-container',
+        width: gameWidth,
+        height: H
+    },
+
+    scene: { preload, create, update }
+};
+
+new Phaser.Game(config);
+
+/* ========================= Состояние ========================= */
+
+let sceneRef = null;
+let player, playerView, playerShadow, floor;
+let roadSprite = null;
+let roadScale = 1;
+
+let backgrounds = [];
+let nextBackgroundIndex = 1;
+
+let bakerySprite = null;
+let bakeryMaskGraphics = null;
+
+let obstacles, platforms, bonuses, birds;
+let cursors, keys;
+
+let hudBar, hudDistance, hudTimer, hudLogo;
+let hudHeart, hudShield, hudBox;
+let hudHeartCount, hudShieldCount, hudBoxCount;
+let warningText;
+
+let currentUI = null;
+let officeGroup = null;
+
+let gameState = 'START_SCREEN';
+let selectedHero = 'artem';
+
+let realDistance = 0;
+let gameSeconds = 0;
+let baseSpeed = 315;
+
+let nextObstacle = 25;
+let nextBonus = 38;
+let nextBird = 75;
+
+let hearts = 1;
+let shields = 0;
+let boxes = 0;
+
+let jumpCount = 0;
+let isSliding = false;
+let invulnerable = false;
+let canRestart = false;
+let portraitBlocked = false;
+
+let runTimer = 0;
+let runFrame = 1;
+let birdTimer = 0;
+let birdFrame = 1;
+
+let raceId = 0;
+let invulnerabilityTween = null;
+let heroScales = {};
+
+window.touchMoveLeft = false;
+window.touchMoveRight = false;
+window.touchSlideActive = false;
+
+/* ============================ Звук ============================ */
+
+const SoundFx = {
+    ctx: null,
+
+    tone(freq, type, duration, endFreq) {
+        try {
+            if (!this.ctx) {
+                const AudioContextClass =
+                    window.AudioContext || window.webkitAudioContext;
+
+                if (!AudioContextClass) return;
+                this.ctx = new AudioContextClass();
+            }
+
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, now);
+
+            if (endFreq) {
+                osc.frequency.exponentialRampToValueAtTime(
+                    Math.max(1, endFreq),
+                    now + duration
+                );
+            }
+
+            gain.gain.setValueAtTime(0.09, now);
+            gain.gain.exponentialRampToValueAtTime(
+                0.001,
+                now + duration
+            );
+
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            osc.start(now);
+            osc.stop(now + duration);
+        } catch (error) {
+            // Если браузер заблокировал звук, игра продолжает работать.
+        }
+    },
+
+    jump() { this.tone(280, 'sine', 0.22, 600); },
+    slide() { this.tone(180, 'triangle', 0.23, 80); },
+    bonus() { this.tone(650, 'sine', 0.2, 900); },
+    hit() { this.tone(120, 'square', 0.35, 40); },
+    gull() { this.tone(900, 'sawtooth', 0.3, 300); },
+
+    win() {
+        [440, 554, 659, 880].forEach((freq, index) => {
+            setTimeout(
+                () => this.tone(freq, 'triangle', 0.35),
+                index * 150
+            );
+        });
+    }
+};
+
+/* =========================== Ресурсы =========================== */
+
+function preload() {
+    this.load.crossOrigin = 'anonymous';
+
+    this.load.on('loaderror', file => {
+        console.error(
+            '[Игра] Не загрузился ресурс:',
+            file.key,
+            file.src
+        );
+    });
+
+    const dummy = document.createElement('canvas');
+    dummy.width = 48;
+    dummy.height = 92;
+    this.textures.addCanvas('hitbox_dummy', dummy);
+
+    Object.entries(ASSETS).forEach(([key, url]) => {
+        this.load.image(key, url);
+    });
+}
+
+function calculateHeroScales(scene) {
+    Object.entries(HEROES).forEach(([heroKey, hero]) => {
+        let maximumHeight = 1;
+
+        for (let frame = 1; frame <= 9; frame++) {
+            const key = hero.prefix + frame;
+
+            if (!scene.textures.exists(key)) continue;
+
+            const source = scene.textures
+                .get(key)
+                .getSourceImage();
+
+            maximumHeight = Math.max(
+                maximumHeight,
+                source.height || 1
+            );
+        }
+
+        heroScales[heroKey] =
+            HERO_DISPLAY_HEIGHT / maximumHeight;
+    });
+}
+
+function setHeroFrame(frame) {
+    const key = HEROES[selectedHero].prefix + frame;
+
+    if (!sceneRef.textures.exists(key)) return;
+
+    playerView
+        .setTexture(key)
+        .setScale(heroScales[selectedHero]);
+}
+
+/* ========================== Фоны ========================== */
+
+function createBackgrounds(scene) {
+    const count = Math.ceil(gameWidth / BG_W) + 2;
+
+    for (let i = 0; i < count; i++) {
+        backgrounds.push(
+            scene.add
+                .image(
+                    BG_W / 2 + i * BG_W,
+                    H / 2,
+                    `bg_seg_${i % 7 + 1}`
+                )
+                .setDisplaySize(BG_W, H)
+                .setDepth(1)
+        );
+    }
+
+    nextBackgroundIndex = count % 7 + 1;
+}
+
+function ensureBackgroundCoverage(scene) {
+    if (!backgrounds.length) return;
+
+    let rightEdge = Math.max(
+        ...backgrounds.map(bg => bg.x + BG_W / 2)
+    );
+
+    while (rightEdge < gameWidth + BG_W) {
+        backgrounds.push(
+            scene.add
+                .image(
+                    rightEdge + BG_W / 2,
+                    H / 2,
+                    `bg_seg_${nextBackgroundIndex}`
+                )
+                .setDisplaySize(BG_W, H)
+                .setDepth(1)
+        );
+
+        nextBackgroundIndex =
+            nextBackgroundIndex % 7 + 1;
+
+        rightEdge += BG_W;
+    }
+}
+
+function resetBackgrounds(scene) {
+    backgrounds.forEach(bg => bg.destroy());
+    backgrounds = [];
+    createBackgrounds(scene);
+}
+
+function scrollBackgrounds(scene, amount) {
+    backgrounds.forEach(bg => {
+        bg.x -= amount;
+    });
+
+    backgrounds.forEach(bg => {
+        if (bg.x > -BG_W / 2) return;
+
+        const rightmostX = Math.max(
+            ...backgrounds.map(other => other.x)
+        );
+
+        bg.setTexture(`bg_seg_${nextBackgroundIndex}`);
+        bg.x = rightmostX + BG_W;
+
+        nextBackgroundIndex =
+            nextBackgroundIndex % 7 + 1;
+    });
+
+    ensureBackgroundCoverage(scene);
+}
+
+function createRoad(scene) {
+    if (!scene.textures.exists('road_tex')) return;
+
+    const source = scene.textures
+        .get('road_tex')
+        .getSourceImage();
+
+    roadScale = Math.min(
+        1,
+        BASE_W / Math.max(1, source.width)
+    );
+
+    const visibleHeight = Math.min(
+        ROAD_VISIBLE_HEIGHT,
+        source.height * roadScale
+    );
+
+    roadSprite = scene.add
+        .tileSprite(
+            gameWidth / 2,
+            H - visibleHeight / 2,
+            gameWidth,
+            visibleHeight,
+            'road_tex'
+        )
+        .setDepth(5);
+
+    // Одинаковый масштаб по X и Y: ограждение не плющится.
+    roadSprite.tileScaleX = roadScale;
+    roadSprite.tileScaleY = roadScale;
+
+    roadSprite.tilePositionY = Math.max(
+        0,
+        source.height - visibleHeight / roadScale
+    );
+}
+
+function removeBakery() {
+    if (bakerySprite) {
+        bakerySprite.destroy();
+        bakerySprite = null;
+    }
+
+    if (bakeryMaskGraphics) {
+        bakeryMaskGraphics.destroy();
+        bakeryMaskGraphics = null;
+    }
+}
+
+function createBakery(scene) {
+    removeBakery();
+
+    if (!scene.textures.exists('bakery')) return;
+
+    const source = scene.textures
+        .get('bakery')
+        .getSourceImage();
+
+    bakerySprite = scene.add
+        .image(
+            BAKERY_CENTER_X,
+            BAKERY_BOTTOM_Y,
+            'bakery'
+        )
+        .setOrigin(0.5, 1)
+        .setScale(BAKERY_HEIGHT / Math.max(1, source.height))
+        .setDepth(6);
+
+    bakeryMaskGraphics = scene.make.graphics({
+        x: 0,
+        y: 0,
+        add: false
+    });
+
+    bakeryMaskGraphics.fillStyle(0xffffff);
+    bakeryMaskGraphics.fillRect(
+        0,
+        0,
+        Math.max(2400, gameWidth + 1000),
+        BAKERY_CLIP_BOTTOM
+    );
+
+    bakerySprite.setMask(
+        bakeryMaskGraphics.createGeometryMask()
+    );
+}
+
+/* ======================= Телефон ======================= */
+
+function resetTouchFlags() {
+    window.touchMoveLeft = false;
+    window.touchMoveRight = false;
+    window.touchSlideActive = false;
+}
+
+function updateTouchControls() {
+    const controls = document.getElementById('touch-controls');
+    if (!controls) return;
+
+    controls.style.display =
+        isTouchDevice() &&
+        !portraitBlocked &&
+        gameState === 'PLAYING'
+            ? 'block'
+            : 'none';
+}
+
+function updateOrientation() {
+    if (!sceneRef) return;
+
+    const vp = viewportSize();
+
+    portraitBlocked =
+        isTouchDevice() &&
+        vp.height > vp.width;
+
+    const overlay = document.getElementById('rotate-device');
+
+    if (overlay) {
+        overlay.style.display =
+            portraitBlocked ? 'flex' : 'none';
+    }
+
+    if (portraitBlocked) {
+        sceneRef.physics.world.pause();
+        resetTouchFlags();
+    } else if (gameState === 'PLAYING') {
+        sceneRef.physics.world.resume();
+    }
+
+    updateTouchControls();
+}
+
+function resizeGame() {
+    if (!sceneRef) return;
+
+    updateOrientation();
+    if (portraitBlocked) return;
+
+    const newWidth = calculateWidth();
+
+    if (Math.abs(newWidth - gameWidth) < 8) {
+        sceneRef.scale.refresh();
+        return;
+    }
+
+    gameWidth = newWidth;
+
+    sceneRef.scale.resize(gameWidth, H);
+    sceneRef.physics.world.setBounds(0, 0, gameWidth, H);
+
+    floor.setPosition(gameWidth / 2, GROUND_Y + 10);
+    floor.setDisplaySize(gameWidth, 20);
+    floor.refreshBody();
+
+    if (roadSprite) {
+        roadSprite.x = gameWidth / 2;
+        roadSprite.width = gameWidth;
+    }
+
+    ensureBackgroundCoverage(sceneRef);
+
+    if (warningText) warningText.x = gameWidth / 2;
+    if (hudLogo) hudLogo.x = gameWidth / 2;
+
+    positionHudRight();
+
+    if (currentUI) currentUI.x = gameWidth / 2;
+}
+
+function bindHoldButton(id, flag) {
+    const button = document.getElementById(id);
+    if (!button) return;
+
+    button.style.touchAction = 'none';
+
+    button.addEventListener('pointerdown', event => {
+        event.preventDefault();
+
+        if (gameState !== 'PLAYING' || portraitBlocked) return;
+
+        window[flag] = true;
+
+        try {
+            button.setPointerCapture(event.pointerId);
+        } catch (error) {
+            // Захват указателя поддерживается не везде.
+        }
+    });
+
+    const release = event => {
+        if (event) event.preventDefault();
+        window[flag] = false;
+    };
+
+    button.addEventListener('pointerup', release);
+    button.addEventListener('pointercancel', release);
+    button.addEventListener('lostpointercapture', release);
+}
+
+function bindTouchButtons() {
+    bindHoldButton('m-btn-left', 'touchMoveLeft');
+    bindHoldButton('m-btn-right', 'touchMoveRight');
+    bindHoldButton('m-btn-slide', 'touchSlideActive');
+
+    const jump = document.getElementById('m-btn-jump');
+
+    if (jump) {
+        jump.style.touchAction = 'none';
+
+        jump.addEventListener('pointerdown', event => {
+            event.preventDefault();
+
+            if (gameState === 'PLAYING' && !portraitBlocked) {
+                doJump();
+            }
+        });
+    }
+}
+
+/*
+ * На телефоне герой стартует дальше правой кнопки движения.
+ * Увеличение его картинки само по себе проблему перекрытия
+ * не решает, поэтому меняется именно игровая X-координата.
+ */
+function playerStartX() {
+    if (isTouchDevice()) {
+        return Math.min(
+            gameWidth - 330,
+            Math.max(340, gameWidth * 0.32)
+        );
+    }
+
+    return Math.min(
+        gameWidth - 240,
+        Math.max(260, gameWidth * 0.27)
+    );
+}
+
+/* ========================== Сцена ========================== */
+
+function create() {
+    sceneRef = this;
+
+    calculateHeroScales(this);
+    createBackgrounds(this);
+    createRoad(this);
+    createBakery(this);
+
+    const ground = this.physics.add.staticGroup();
+
+    floor = ground.create(
+        gameWidth / 2,
+        GROUND_Y + 10,
+        'hitbox_dummy'
+    );
+
+    floor
+        .setDisplaySize(gameWidth, 20)
+        .setVisible(false)
+        .refreshBody();
+
+    playerShadow = this.add
+        .ellipse(260, SHADOW_Y, 52, 12, 0x000000, 0.36)
+        .setDepth(9)
+        .setVisible(false);
+
+    player = this.physics.add
+        .sprite(260, GROUND_Y, 'hitbox_dummy')
+        .setOrigin(0.5, 1)
+        .setDepth(10)
+        .setVisible(false);
+
+    player.body.setSize(48, 92);
+    player.body.setCollideWorldBounds(true);
+
+    playerView = this.add
+        .image(260, GROUND_Y, 'p1')
+        .setOrigin(0.5, 1)
+        .setDepth(11)
+        .setVisible(false);
+
+    obstacles = this.physics.add.group();
+    platforms = this.physics.add.group();
+    bonuses = this.physics.add.group();
+    birds = this.physics.add.group();
+
+    this.physics.add.collider(player, ground, () => {
+        jumpCount = 0;
+    });
+
+    this.physics.add.collider(
+        player,
+        platforms,
+        () => {
+            jumpCount = 0;
+        },
+        (hero, platform) => (
+            hero.body.velocity.y >= 0 &&
+            hero.body.bottom <= platform.body.top + 16
+        ),
+        this
+    );
+
+    this.physics.add.overlap(
+        player,
+        obstacles,
+        hitObstacle,
+        null,
+        this
+    );
+
+    this.physics.add.overlap(
+        player,
+        birds,
+        hitObstacle,
+        null,
+        this
+    );
+
+    this.physics.add.overlap(
+        player,
+        bonuses,
+        getBonus,
+        null,
+        this
+    );
+
+    this.physics.add.overlap(
+        player,
+        platforms,
+        (hero, platform) => {
+            if (
+                hero.body.bottom > platform.body.top + 16 &&
+                hero.body.top < platform.body.bottom
+            ) {
+                hitObstacle.call(this, hero, platform);
+            }
+        },
+        null,
+        this
+    );
+
+    createHud(this);
+
+    cursors = this.input.keyboard.createCursorKeys();
+
+    keys = this.input.keyboard.addKeys({
+        one: Phaser.Input.Keyboard.KeyCodes.ONE,
+        two: Phaser.Input.Keyboard.KeyCodes.TWO,
+        three: Phaser.Input.Keyboard.KeyCodes.THREE,
+        enter: Phaser.Input.Keyboard.KeyCodes.ENTER
+    });
+
+    this.input.keyboard.addCapture([
+        Phaser.Input.Keyboard.KeyCodes.SPACE,
+        Phaser.Input.Keyboard.KeyCodes.UP,
+        Phaser.Input.Keyboard.KeyCodes.DOWN,
+        Phaser.Input.Keyboard.KeyCodes.LEFT,
+        Phaser.Input.Keyboard.KeyCodes.RIGHT
+    ]);
+
+    bindTouchButtons();
+
+    window.addEventListener('resize', resizeGame);
+
+    window.addEventListener(
+        'orientationchange',
+        () => setTimeout(resizeGame, 250)
+    );
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener(
+            'resize',
+            resizeGame
+        );
+    }
+
+    showStartScreen(this);
+    updateOrientation();
+
+    this.time.delayedCall(300, resizeGame);
+}
+
+/* =========================== HUD =========================== */
+
+function setImageWidth(image, width) {
+    const source = image.scene.textures
+        .get(image.texture.key)
+        .getSourceImage();
+
+    image.setScale(width / Math.max(1, source.width));
+}
+
+function createHud(scene) {
+    const mobile = isTouchDevice();
+    const iconWidth = mobile ? 84 : 69;
+    const spacing = mobile ? 91 : 77;
+
+    hudHeart = scene.add
+        .image(45, 54, 'hud_heart')
+        .setDepth(95);
+
+    hudShield = scene.add
+        .image(45 + spacing, 54, 'hud_shield')
+        .setDepth(95);
+
+    hudBox = scene.add
+        .image(45 + spacing * 2, 54, 'hud_box')
+        .setDepth(95);
+
+    [hudHeart, hudShield, hudBox].forEach(icon => {
+        setImageWidth(icon, iconWidth);
+    });
+
+    const countStyle = {
+        fontSize: mobile ? '26px' : '21px',
+        fontFamily: 'sans-serif',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        stroke: '#61300c',
+        strokeThickness: 5
+    };
+
+    hudHeartCount = scene.add
+        .text(69, 78, '1', countStyle)
+        .setOrigin(0.5)
+        .setDepth(97);
+
+    hudShieldCount = scene.add
+        .text(69 + spacing, 78, '0', countStyle)
+        .setOrigin(0.5)
+        .setDepth(97);
+
+    hudBoxCount = scene.add
+        .text(69 + spacing * 2, 78, '0', countStyle)
+        .setOrigin(0.5)
+        .setDepth(97);
+
+    hudLogo = scene.add
+        .image(gameWidth / 2, 42, 'logo_33')
+        .setDepth(95);
+
+    setImageWidth(hudLogo, mobile ? 260 : 240);
+
+    hudBar = scene.add
+        .image(gameWidth - 190, 48, 'hud_bar')
+        .setDepth(94);
+
+    setImageWidth(hudBar, mobile ? 380 : 345);
+
+    /*
+     * В distance_time.png уже нарисованы флажок и часы.
+     * Текст ставим правее этих значков.
+     *
+     * Показываем только пройденное расстояние: «85 м».
+     */
+    const distanceStyle = {
+        fontSize: mobile ? '32px' : '27px',
+        fontFamily: 'Arial, sans-serif',
+        fontStyle: 'bold',
+        color: '#301f1b',
+        stroke: '#ffffff',
+        strokeThickness: 4
+    };
+
+    const timerStyle = {
+        fontSize: mobile ? '27px' : '23px',
+        fontFamily: 'Arial, sans-serif',
+        fontStyle: 'bold',
+        color: '#8e3b00',
+        stroke: '#ffffff',
+        strokeThickness: 3
+    };
+
+    hudDistance = scene.add
+        .text(
+            gameWidth - (mobile ? 310 : 294),
+            48,
+            '0 м',
+            distanceStyle
+        )
+        .setOrigin(0, 0.5)
+        .setDepth(96);
+
+    hudTimer = scene.add
+        .text(
+            gameWidth - (mobile ? 115 : 104),
+            48,
+            '00:00',
+            timerStyle
+        )
+        .setOrigin(0, 0.5)
+        .setDepth(96);
+
+    warningText = scene.add
+        .text(
+            gameWidth / 2,
+            125,
+            '⚠️ КЛЮВ КЛЮВЫЧ АТАКУЕТ! ПРИГНИСЬ! ⚠️',
+            {
+                fontSize: '19px',
+                fontFamily: 'sans-serif',
+                fontStyle: 'bold',
+                color: '#ff3333',
+                backgroundColor: '#000000',
+                padding: { x: 10, y: 5 }
+            }
+        )
+        .setOrigin(0.5)
+        .setDepth(98)
+        .setVisible(false);
+
+    updateHud();
+}
+
+function positionHudRight() {
+    if (!hudBar) return;
+
+    const mobile = isTouchDevice();
+
+    hudBar.x = gameWidth - 190;
+
+    hudDistance.x =
+        gameWidth - (mobile ? 310 : 294);
+
+    hudTimer.x =
+        gameWidth - (mobile ? 115 : 104);
+}
+
+function updateHud() {
+    if (!hudHeart) return;
+
+    hudHeart.setAlpha(hearts > 0 ? 1 : 0.28);
+    hudShield.setAlpha(shields > 0 ? 1 : 0.28);
+    hudBox.setAlpha(boxes > 0 ? 1 : 0.28);
+
+    hudHeartCount.setText(String(hearts));
+    hudShieldCount.setText(String(shields));
+    hudBoxCount.setText(String(boxes));
+}
+
+/* ======================= Окна игры ======================= */
+
+function clearUI() {
+    if (!currentUI) return;
+
+    currentUI.destroy(true);
+    currentUI = null;
+}
+
+function clearOffice() {
+    if (!officeGroup) return;
+
+    officeGroup.getChildren().forEach(object => {
+        if (object && object.scene) {
+            object.scene.tweens.killTweensOf(object);
+        }
+    });
+
+    officeGroup.destroy(true);
+    officeGroup = null;
+}
+
+function hidePlayer() {
+    player.setVisible(false);
+    playerView.setVisible(false);
+    playerShadow.setVisible(false);
+}
+
+/*
+ * Показывает готовый PNG целиком и сохраняет его пропорции.
+ * Зоны нажатий задаются долями ширины/высоты картинки:
+ * при другом размере исходника они остаются на своих местах.
+ */
+function imageWindow(scene, textureKey, darken = 0.7) {
+    clearUI();
+
+    const ui = scene.add
+        .container(gameWidth / 2, H / 2)
+        .setDepth(110);
+
+    currentUI = ui;
+
+    const backdrop = scene.add
+        .rectangle(
+            0,
+            0,
+            4000,
+            1500,
+            0x080d16,
+            darken
+        )
+        .setInteractive();
+
+    ui.add(backdrop);
+
+    if (!scene.textures.exists(textureKey)) {
+        console.error(
+            '[Игра] Не загрузилось окно:',
+            textureKey
+        );
+
+        const fallback = scene.add
+            .text(0, 0, 'Не загрузилось изображение окна', {
+                fontSize: '26px',
+                color: '#ffffff',
+                backgroundColor: '#733300'
+            })
+            .setOrigin(0.5);
+
+        ui.add(fallback);
+
+        return null;
+    }
+
+    const source = scene.textures
+        .get(textureKey)
+        .getSourceImage();
+
+    const imageWidth = source.width || 1380;
+    const imageHeight = source.height || 780;
+
+    const scale = Math.min(
+        (gameWidth - 16) / imageWidth,
+        (H - 12) / imageHeight
+    );
+
+    const image = scene.add
+        .image(0, 0, textureKey)
+        .setScale(scale);
+
+    ui.add(image);
+
+    return {
+        ui,
+        width: imageWidth * scale,
+        height: imageHeight * scale
+    };
+}
+
+function addWindowHotspot(
+    scene,
+    windowData,
+    centerXFraction,
+    centerYFraction,
+    widthFraction,
+    heightFraction,
+    callback
+) {
+    const hotspot = scene.add
+        .rectangle(
+            (centerXFraction - 0.5) * windowData.width,
+            (centerYFraction - 0.5) * windowData.height,
+            widthFraction * windowData.width,
+            heightFraction * windowData.height,
+            0xffffff,
+            0.001
+        )
+        .setInteractive({ useHandCursor: true });
+
+    hotspot.on('pointerdown', event => {
+        if (event && event.stopPropagation) {
+            event.stopPropagation();
+        }
+
+        callback();
+    });
+
+    windowData.ui.add(hotspot);
+}
+
+function showStartScreen(scene) {
+    gameState = 'START_SCREEN';
+    updateTouchControls();
+    hidePlayer();
+
+    clearUI();
+
+    const ui = scene.add
+        .container(gameWidth / 2, H / 2)
+        .setDepth(110);
+
+    currentUI = ui;
+
+    const backdrop = scene.add
+        .rectangle(0, 0, 4000, 1500, 0x08111d, 0.9)
+        .setInteractive();
+
+    const card = scene.add
+        .rectangle(0, 0, 790, 400, 0x132030)
+        .setStrokeStyle(3, 0xff8500);
+
+    const title = scene.add
+        .text(
+            0,
+            -128,
+            '🎂 ПРАЗДНИЧНЫЙ ЗАБЕГ «СОГЛАСИЯ»',
+            {
+                fontSize: '27px',
+                color: '#ffffff',
+                fontFamily: 'sans-serif',
+                fontStyle: 'bold'
+            }
+        )
+        .setOrigin(0.5);
+
+    const instructions = scene.add
+        .text(
+            0,
+            -25,
+            'Заберите торт из кондитерской и доставьте в офис!\n\n' +
+            'Прыжок: ↑ / Пробел / ▲\n' +
+            'Подкат: ↓ / ▼',
+            {
+                fontSize: '19px',
+                color: '#c9e9f4',
+                fontFamily: 'sans-serif',
+                align: 'center'
+            }
+        )
+        .setOrigin(0.5);
+
+    const button = scene.add
+        .rectangle(0, 135, 370, 58, 0xff6d00)
+        .setInteractive({ useHandCursor: true });
+
+    const buttonLabel = scene.add
+        .text(0, 135, 'ВЫБРАТЬ ПЕРСОНАЖА', {
+            fontSize: '19px',
+            color: '#ffffff',
+            fontFamily: 'sans-serif',
+            fontStyle: 'bold'
+        })
+        .setOrigin(0.5);
+
+    button.on('pointerdown', () => showCharacterSelect(scene));
+
+    ui.add([
+        backdrop,
+        card,
+        title,
+        instructions,
+        button,
+        buttonLabel
+    ]);
+}
+
+function showCharacterSelect(scene) {
+    gameState = 'CHARACTER_SELECT';
+    updateTouchControls();
+    clearOffice();
+    hidePlayer();
+
+    const windowData = imageWindow(
+        scene,
+        'choose_screen',
+        0.75
+    );
+
+    if (!windowData) {
+        // Если PNG не загрузился, клавиши 1/2/3 всё ещё работают.
+        return;
+    }
+
+    /*
+     * Три оранжевые кнопки на choose.png.
+     * Доли рассчитаны по присланному изображению.
+     */
+    [
+        { x: 0.26, hero: 'artem' },
+        { x: 0.50, hero: 'viktoria' },
+        { x: 0.74, hero: 'maksim' }
+    ].forEach(item => {
+        addWindowHotspot(
+            scene,
+            windowData,
+            item.x,
+            0.64,
+            0.20,
+            0.14,
+            () => startRace(scene, item.hero)
+        );
+    });
+}
+
+/* ========================== Забег ========================== */
+
+function destroyWithShadow(object) {
+    if (!object) return;
+
+    if (object.shadowRef && object.shadowRef.active) {
+        object.shadowRef.destroy();
+    }
+
+    if (object.active) object.destroy();
+}
+
+function clearRaceObjects() {
+    [obstacles, platforms, bonuses, birds].forEach(group => {
+        group.getChildren()
+            .slice()
+            .forEach(destroyWithShadow);
+    });
+}
+
+function startRace(scene, heroKey) {
+    const hero = HEROES[heroKey];
+    if (!hero) return;
+
+    raceId++;
+    selectedHero = heroKey;
+
+    if (invulnerabilityTween) {
+        invulnerabilityTween.stop();
+        invulnerabilityTween = null;
+    }
+
+    clearRaceObjects();
+    clearOffice();
+    clearUI();
+
+    hearts = hero.hearts;
+    shields = 0;
+    boxes = hero.boxes;
+
+    realDistance = 0;
+    gameSeconds = 0;
+    baseSpeed = 315;
+
+    nextObstacle = 25;
+    nextBonus = 38;
+    nextBird = 75;
+
+    jumpCount = 0;
+    isSliding = false;
+    invulnerable = false;
+    canRestart = false;
+
+    runTimer = 0;
+    runFrame = 1;
+    birdTimer = 0;
+    birdFrame = 1;
+
+    resetTouchFlags();
+    resetBackgrounds(scene);
+    createBakery(scene);
+
+    if (roadSprite) {
+        roadSprite.tilePositionX = 0;
+    }
+
+    player
+        .setPosition(playerStartX(), GROUND_Y)
+        .setVelocity(0, 0)
+        .setVisible(true);
+
+    player.body.enable = true;
+    player.body.setGravityY(hero.gravityY);
+    player.body.setSize(48, 92);
+    player.body.setOffset(0, 0);
+
+    playerView
+        .setPosition(player.x, player.y)
+        .setVisible(true)
+        .setAlpha(1)
+        .clearTint();
+
+    setHeroFrame(1);
+
+    playerShadow
+        .setPosition(player.x, SHADOW_Y)
+        .setVisible(true);
+
+    warningText.setVisible(false);
+    hudDistance.setText('0 м');
+    hudTimer.setText('00:00');
+
+    updateHud();
+
+    gameState = 'PLAYING';
+
+    if (!portraitBlocked) {
+        scene.physics.world.resume();
+    }
+
+    updateTouchControls();
+    SoundFx.bonus();
+}
+
+function update(time, delta) {
+    if (portraitBlocked) return;
+
+    if (gameState === 'START_SCREEN') {
+        if (Phaser.Input.Keyboard.JustDown(cursors.space)) {
+            showCharacterSelect(this);
+        }
+        return;
+    }
+
+    if (gameState === 'CHARACTER_SELECT') {
+        if (Phaser.Input.Keyboard.JustDown(keys.one)) {
+            startRace(this, 'artem');
+        } else if (Phaser.Input.Keyboard.JustDown(keys.two)) {
+            startRace(this, 'viktoria');
+        } else if (Phaser.Input.Keyboard.JustDown(keys.three)) {
+            startRace(this, 'maksim');
+        }
+        return;
+    }
+
+    if (gameState === 'GAMEOVER') {
+        if (
+            canRestart &&
+            Phaser.Input.Keyboard.JustDown(cursors.space)
+        ) {
+            startRace(this, selectedHero);
+        }
+        return;
+    }
+
+    if (gameState === 'WIN_MENU') {
+        if (Phaser.Input.Keyboard.JustDown(cursors.space)) {
+            showCharacterSelect(this);
+        }
+        return;
+    }
+
+    if (gameState !== 'PLAYING') return;
+
+    const dt = Math.min(delta, 50) / 1000;
+
+    gameSeconds += dt;
+
+    const minutes = Math.floor(gameSeconds / 60);
+    const seconds = Math.floor(gameSeconds % 60);
+
+    hudTimer.setText(
+        `${String(minutes).padStart(2, '0')}:` +
+        `${String(seconds).padStart(2, '0')}`
+    );
+
+    let adjustment = 0;
+
+    if (cursors.left.isDown || window.touchMoveLeft) {
+        adjustment = -230;
+        player.setVelocityX(-230);
+    } else if (cursors.right.isDown || window.touchMoveRight) {
+        adjustment = 190;
+        player.setVelocityX(190);
+    } else {
+        player.setVelocityX(0);
+    }
+
+    const worldSpeed = Math.max(80, baseSpeed + adjustment);
+
+    realDistance = Math.min(
+        TARGET_DISTANCE,
+        realDistance + worldSpeed * dt * METERS_PER_PIXEL
+    );
+
+    if (roadSprite) {
+        roadSprite.tilePositionX +=
+            worldSpeed * dt / roadScale;
+    }
+
+    scrollBackgrounds(this, worldSpeed * 0.08 * dt);
+
+    if (bakerySprite && bakerySprite.active) {
+        bakerySprite.x -= worldSpeed * dt;
+
+        if (
+            bakerySprite.x +
+            bakerySprite.displayWidth / 2 < -50
+        ) {
+            removeBakery();
+        }
+    }
+
+    if (realDistance >= TARGET_DISTANCE) {
+        realDistance = TARGET_DISTANCE;
+        hudDistance.setText('3300 м');
+        syncPlayerView();
+        startOfficeArrival(this);
+        return;
+    }
+
+    hudDistance.setText(
+        `${Math.floor(realDistance)} м`
+    );
+
+    const segment = Math.min(
+        7,
+        Math.floor(realDistance / TARGET_DISTANCE * 7) + 1
+    );
+
+    baseSpeed = 300 + segment * 15;
+
+    if (
+        Phaser.Input.Keyboard.JustDown(cursors.up) ||
+        Phaser.Input.Keyboard.JustDown(cursors.space)
+    ) {
+        doJump();
+    }
+
+    const grounded =
+        player.body.touching.down ||
+        player.body.blocked.down;
+
+    const slideHeld =
+        cursors.down.isDown ||
+        window.touchSlideActive;
+
+    if (
+        slideHeld &&
+        !grounded &&
+        selectedHero === 'viktoria' &&
+        player.body.velocity.y < 880
+    ) {
+        player.setVelocityY(880);
+    }
+
+    if (slideHeld && grounded) {
+        if (!isSliding) {
+            startSlide();
+            SoundFx.slide();
+        }
+
+        setHeroFrame(9);
+    } else {
+        if (isSliding) stopSlide();
+
+        if (!grounded) {
+            setHeroFrame(
+                player.body.velocity.y < 0 ? 7 : 8
+            );
+        } else {
+            runTimer += delta;
+
+            if (runTimer >= 100) {
+                runTimer = 0;
+                runFrame = runFrame % 6 + 1;
+                setHeroFrame(runFrame);
+            }
+        }
+    }
+
+    syncPlayerView();
+
+    if (selectedHero === 'maksim') {
+        attractBonuses(this);
+    }
+
+    if (
+        realDistance >= nextBird &&
+        realDistance < TARGET_DISTANCE - 150
+    ) {
+        launchBird(this);
+
+        nextBird = realDistance +
+            (
+                realDistance < 1000
+                    ? 95
+                    : realDistance < 2200
+                        ? 75
+                        : 60
+            );
+    }
+
+    if (
+        realDistance >= nextObstacle &&
+        realDistance < TARGET_DISTANCE - 100
+    ) {
+        spawnChallenge(this);
+    }
+
+    if (
+        realDistance >= nextBonus &&
+        realDistance < TARGET_DISTANCE - 50
+    ) {
+        spawnBonus(this);
+
+        nextBonus = realDistance +
+            Phaser.Math.Between(48, 70);
+    }
+
+    animateBirds(this, delta);
+    updateRaceObjects(this, worldSpeed, delta);
+}
+
+function syncPlayerView() {
+    playerView.setPosition(player.x, player.y);
+
+    playerShadow.x = player.x;
+    playerShadow.y = SHADOW_Y;
+
+    const grounded =
+        player.body.touching.down ||
+        player.body.blocked.down;
+
+    if (grounded) {
+        playerShadow.setDisplaySize(isSliding ? 65 : 52, 12);
+        playerShadow.setAlpha(0.36);
+    } else {
+        const altitude = Math.max(0, GROUND_Y - player.y);
+        const factor = Math.max(0.35, 1 - altitude / 260);
+
+        playerShadow.setDisplaySize(
+            52 * factor,
+            12 * factor
+        );
+
+        playerShadow.setAlpha(0.36 * factor);
+    }
+}
+
+function doJump() {
+    if (gameState !== 'PLAYING' || portraitBlocked) return;
+
+    const grounded =
+        player.body.touching.down ||
+        player.body.blocked.down;
+
+    if (isSliding) stopSlide();
+
+    const force = HEROES[selectedHero].jumpForce;
+
+    if (grounded) {
+        player.setVelocityY(force);
+        jumpCount = 1;
+        SoundFx.jump();
+    } else if (jumpCount === 1) {
+        player.setVelocityY(force + 90);
+        jumpCount = 2;
+        SoundFx.jump();
+    }
+}
+
+function startSlide() {
+    isSliding = true;
+    player.body.setSize(48, 45);
+    player.body.setOffset(0, 47);
+}
+
+function stopSlide() {
+    isSliding = false;
+
+    if (!player || !player.body) return;
+
+    player.body.setSize(48, 92);
+    player.body.setOffset(0, 0);
+}
+
+/* ======================= Предметы ======================= */
+
+function fitBody(sprite, width, height) {
+    const scaleX = Math.abs(sprite.scaleX) || 1;
+    const scaleY = Math.abs(sprite.scaleY) || 1;
+
+    sprite.body.setSize(
+        width / scaleX,
+        height / scaleY,
+        true
+    );
+
+    sprite.body.updateFromGameObject();
+    return sprite;
+}
+
+function attachShadow(scene, object, width) {
+    object.shadowRef = scene.add
+        .ellipse(
+            object.x,
+            SHADOW_Y,
+            width,
+            12,
+            0x000000,
+            0.33
+        )
+        .setDepth(6);
+}
+
+function spawnChallenge(scene) {
+    const pattern = Phaser.Math.Between(1, 5);
+
+    if (pattern === 1 || pattern === 5) {
+        createObstacle(
+            scene,
+            'obs_pallet',
+            115, 85,
+            105, 75
+        );
+    } else if (pattern === 2) {
+        createObstacle(
+            scene,
+            'obs_scooter',
+            135, 65,
+            125, 55
+        );
+    } else if (pattern === 3) {
+        spawnBarrier(scene);
+    } else {
+        spawnPot(scene);
+    }
+
+    nextObstacle =
+        realDistance + Phaser.Math.Between(48, 65);
+}
+
+function createObstacle(
+    scene,
+    key,
+    visibleWidth,
+    visibleHeight,
+    hitWidth,
+    hitHeight
+) {
+    const object = obstacles
+        .create(
+            gameWidth + 80,
+            OBSTACLE_BOTTOM_Y,
+            key
+        )
+        .setOrigin(0.5, 1)
+        .setDisplaySize(visibleWidth, visibleHeight)
+        .setDepth(7);
+
+    fitBody(object, hitWidth, hitHeight);
+
+    object.body.allowGravity = false;
+    object.setImmovable(true);
+    object.setVelocityX(-baseSpeed);
+    object.obstacleType = 'bottom';
+
+    attachShadow(
+        scene,
+        object,
+        Math.min(100, visibleWidth)
+    );
+}
+
+function spawnBarrier(scene) {
+    const barrier = platforms
+        .create(
+            gameWidth + 80,
+            OBSTACLE_BOTTOM_Y,
+            'obs_barrier'
+        )
+        .setOrigin(0.5, 1)
+        .setDisplaySize(120, 90)
+        .setDepth(7);
+
+    fitBody(barrier, 105, 80);
+
+    barrier.body.allowGravity = false;
+    barrier.setImmovable(true);
+    barrier.setVelocityX(-baseSpeed);
+    barrier.obstacleType = 'bottom';
+
+    attachShadow(scene, barrier, 90);
+}
+
+function spawnPot(scene) {
+    const x = player.x +
+        Phaser.Math.Between(300, 420);
+
+    const pot = obstacles
+        .create(x, 75, 'obs_pot')
+        .setDisplaySize(75, 75)
+        .setDepth(8);
+
+    fitBody(pot, 55, 55);
+
+    pot.body.allowGravity = false;
+    pot.setImmovable(true);
+    pot.setVelocity(-baseSpeed * 0.55, 570);
+    pot.obstacleType = 'top';
+
+    attachShadow(scene, pot, 45);
+}
+
+function spawnBonus(scene) {
+    const roll = Phaser.Math.Between(1, 10);
+
+    const key =
+        roll <= 4
+            ? 'bonus_box'
+            : roll <= 7
+                ? 'bonus_shield'
+                : 'bonus_heart';
+
+    const y = Phaser.Math.RND.pick([
+        GROUND_Y - 170,
+        GROUND_Y - 205
+    ]);
+
+    const bonus = bonuses
+        .create(gameWidth + 60, y, key)
+        .setDisplaySize(48, 48)
+        .setDepth(8);
+
+    fitBody(bonus, 44, 44);
+
+    bonus.body.allowGravity = false;
+    bonus.setVelocityX(-baseSpeed);
+    bonus.bonusKey = key;
+    bonus.isMagnetized = false;
+}
+
+function getBonus(hero, bonus) {
+    if (gameState !== 'PLAYING' || !bonus.active) return;
+
+    if (bonus.bonusKey === 'bonus_box') {
+        boxes++;
+    } else if (bonus.bonusKey === 'bonus_shield') {
+        shields++;
+    } else {
+        hearts++;
+    }
+
+    bonus.destroy();
+
+    updateHud();
+    SoundFx.bonus();
+}
+
+function attractBonuses(scene) {
+    bonuses.getChildren().forEach(bonus => {
+        if (!bonus.active) return;
+
+        const distance = Phaser.Math.Distance.Between(
+            player.x,
+            player.y,
+            bonus.x,
+            bonus.y
+        );
+
+        if (distance < 185) {
+            scene.physics.moveToObject(bonus, player, 380);
+            bonus.isMagnetized = true;
+        }
+    });
+}
+
+/* ====================== Клюв Клювыч ====================== */
+
+function createBird(scene, x, y, flipX) {
+    const bird = birds
+        .create(x, y, 'bird_1')
+        .setDisplaySize(84, 60)
+        .setFlipX(Boolean(flipX))
+        .setDepth(8);
+
+    fitBody(bird, 58, 30);
+
+    bird.body.allowGravity = false;
+    bird.obstacleType = 'top';
+
+    return bird;
+}
+
+function launchBird(scene) {
+    const thisRace = raceId;
+
+    if (Phaser.Math.Between(0, 1) === 1) {
+        warningText.setVisible(true);
+        SoundFx.gull();
+
+        scene.time.delayedCall(700, () => {
+            if (
+                thisRace !== raceId ||
+                gameState !== 'PLAYING'
+            ) {
+                return;
+            }
+
+            warningText.setVisible(false);
+
+            const bird = createBird(
+                scene,
+                -60,
+                GROUND_Y - 68,
+                true
+            );
+
+            bird.setVelocityX(baseSpeed + 260);
+        });
+
+        return;
+    }
+
+    const bird = createBird(
+        scene,
+        Math.min(gameWidth - 70, player.x + 320),
+        92,
+        false
+    );
+
+    bird.setVelocityX(-70);
+    bird.setTint(0xff7777);
+
+    scene.time.delayedCall(360, () => {
+        if (
+            thisRace !== raceId ||
+            gameState !== 'PLAYING' ||
+            !bird.active
+        ) {
+            return;
+        }
+
+        bird.clearTint();
+        SoundFx.gull();
+
+        const angle = Math.atan2(
+            GROUND_Y - 75 - bird.y,
+            player.x - bird.x
+        );
+
+        const speed = 640;
+
+        bird.setVelocity(
+            Math.cos(angle) * speed,
+            Math.sin(angle) * speed
+        );
+
+        bird.setRotation(angle);
+    });
+}
+
+function animateBirds(scene, delta) {
+    birdTimer += delta;
+    if (birdTimer < 90) return;
+
+    birdTimer = 0;
+    birdFrame = birdFrame % 5 + 1;
+
+    const key = `bird_${birdFrame}`;
+    if (!scene.textures.exists(key)) return;
+
+    birds.getChildren().forEach(bird => {
+        if (bird.active) bird.setTexture(key);
+    });
+}
+
+function updateRaceObjects(scene, speed, delta) {
+    obstacles.getChildren().slice().forEach(object => {
+        if (!object.active) return;
+
+        if (object.texture.key === 'obs_pot') {
+            object.angle +=
+                210 * Math.min(delta, 50) / 1000;
+
+            if (object.y >= GROUND_Y - 42) {
+                destroyWithShadow(object);
+                return;
+            }
+        } else {
+            object.setVelocityX(-speed);
+        }
+
+        if (object.shadowRef && object.shadowRef.active) {
+            object.shadowRef.x = object.x;
+        }
+
+        if (object.x < -140) {
+            destroyWithShadow(object);
+        }
+    });
+
+    platforms.getChildren().slice().forEach(object => {
+        if (!object.active) return;
+
+        object.setVelocityX(-speed);
+
+        if (object.shadowRef && object.shadowRef.active) {
+            object.shadowRef.x = object.x;
+        }
+
+        if (object.x < -140) {
+            destroyWithShadow(object);
+        }
+    });
+
+    bonuses.getChildren().slice().forEach(bonus => {
+        if (!bonus.active) return;
+
+        if (!bonus.isMagnetized) {
+            bonus.setVelocityX(-speed);
+        }
+
+        if (bonus.x < -100 || bonus.y > H + 100) {
+            bonus.destroy();
+        }
+    });
+
+    birds.getChildren().slice().forEach(bird => {
+        if (!bird.active) return;
+
+        if (
+            bird.x < -140 ||
+            bird.x > gameWidth + 200 ||
+            bird.y > H + 100
+        ) {
+            bird.destroy();
+        }
+    });
+}
+
+/* ====================== Урон и поражение ====================== */
+
+function hitObstacle(hero, obstacle) {
+    if (
+        gameState !== 'PLAYING' ||
+        invulnerable ||
+        !obstacle.active
+    ) {
+        return;
+    }
+
+    if (isSliding && obstacle.obstacleType === 'top') {
+        return;
+    }
+
+    if (obstacle.obstacleType === 'top' && boxes > 0) {
+        boxes--;
+        destroyWithShadow(obstacle);
+        SoundFx.bonus();
+        flashPlayer(this, 0x00c3ff);
+        updateHud();
+        return;
+    }
+
+    if (obstacle.obstacleType === 'bottom' && shields > 0) {
+        shields--;
+        destroyWithShadow(obstacle);
+        SoundFx.bonus();
+        flashPlayer(this, 0x00ff66);
+        updateHud();
+        return;
+    }
+
+    if (hearts > 0) {
+        hearts--;
+        destroyWithShadow(obstacle);
+        SoundFx.hit();
+        triggerInvulnerability(this);
+        updateHud();
+        return;
+    }
+
+    showGameOver(this);
+}
+
+function triggerInvulnerability(scene) {
+    invulnerable = true;
+
+    if (invulnerabilityTween) {
+        invulnerabilityTween.stop();
+    }
+
+    invulnerabilityTween = scene.tweens.add({
+        targets: playerView,
+        alpha: 0.25,
+        duration: 100,
+        yoyo: true,
+        repeat: 7,
+
+        onComplete: () => {
+            playerView.setAlpha(1);
+            invulnerable = false;
+            invulnerabilityTween = null;
+        }
+    });
+}
+
+function flashPlayer(scene, color) {
+    const thisRace = raceId;
+
+    playerView.setTint(color);
+
+    scene.time.delayedCall(450, () => {
+        if (
+            thisRace === raceId &&
+            gameState === 'PLAYING'
+        ) {
+            playerView.clearTint();
+        }
+    });
+}
+
+function showGameOver(scene) {
+    gameState = 'GAMEOVER';
+    canRestart = false;
+
+    updateTouchControls();
+    warningText.setVisible(false);
+    resetTouchFlags();
+    scene.physics.world.pause();
+    hidePlayer();
+    SoundFx.hit();
+
+    const windowData = imageWindow(
+        scene,
+        'die_screen',
+        0.72
+    );
+
+    if (!windowData) return;
+
+    /*
+     * В die.png напечатан пример дистанции.
+     * Пока закрываем его светлой подложкой и пишем
+     * реальное расстояние. Идеально — позже получить PNG
+     * без примерного числа.
+     */
+    const distancePatch = scene.add
+        .rectangle(
+            (0.78 - 0.5) * windowData.width,
+            (0.29 - 0.5) * windowData.height,
+            windowData.width * 0.35,
+            windowData.height * 0.07,
+            0xf1e6dc
+        );
+
+    const distanceLabel = scene.add
+        .text(
+            (0.78 - 0.5) * windowData.width,
+            (0.29 - 0.5) * windowData.height,
+            `Пройдено: ${Math.floor(realDistance)} м из 3300 м`,
+            {
+                fontSize: Math.max(
+                    13,
+                    Math.round(windowData.height * 0.037)
+                ) + 'px',
+                fontFamily: 'sans-serif',
+                fontStyle: 'bold',
+                color: '#553322'
+            }
+        )
+        .setOrigin(0.5);
+
+    windowData.ui.add([
+        distancePatch,
+        distanceLabel
+    ]);
+
+    // Билет с промокодом.
+    addWindowHotspot(
+        scene,
+        windowData,
+        0.79, 0.47,
+        0.34, 0.20,
+        () => window.open(
+            PROMO_URL,
+            '_blank',
+            'noopener,noreferrer'
+        )
+    );
+
+    // Оранжевая кнопка.
+    addWindowHotspot(
+        scene,
+        windowData,
+        0.79, 0.67,
+        0.33, 0.14,
+        () => {
+            if (canRestart) startRace(scene, selectedHero);
+        }
+    );
+
+    // Серая кнопка.
+    addWindowHotspot(
+        scene,
+        windowData,
+        0.79, 0.82,
+        0.33, 0.13,
+        () => {
+            if (canRestart) showCharacterSelect(scene);
+        }
+    );
+
+    const thisRace = raceId;
+
+    scene.time.delayedCall(400, () => {
+        if (
+            thisRace === raceId &&
+            gameState === 'GAMEOVER'
+        ) {
+            canRestart = true;
+        }
+    });
+}
+
+/* =========================== Финиш =========================== */
+
+function startOfficeArrival(scene) {
+    if (gameState !== 'PLAYING') return;
+
+    gameState = 'WIN_CINEMATIC';
+    updateTouchControls();
+    warningText.setVisible(false);
+    resetTouchFlags();
+
+    scene.physics.world.pause();
+    clearRaceObjects();
+    clearOffice();
+
+    if (invulnerabilityTween) {
+        invulnerabilityTween.stop();
+        invulnerabilityTween = null;
+    }
+
+    playerView.setAlpha(1).clearTint();
+
+    officeGroup = scene.add.group();
+
+    if (!scene.textures.exists('office')) {
+        console.error('[Игра] Не загрузился PNG офиса');
+        showVictoryCard(scene);
+        return;
+    }
+
+    const source = scene.textures
+        .get('office')
+        .getSourceImage();
+
+    const scale =
+        OFFICE_HEIGHT / Math.max(1, source.height);
+
+    /*
+     * Здание за road.png: depth 3 против depth 5.
+     * Во время подъезда дорога продолжает прокручиваться.
+     */
+    const office = scene.add
+        .image(
+            gameWidth + source.width * scale / 2,
+            OFFICE_BOTTOM_Y,
+            'office'
+        )
+        .setOrigin(0.5, 1)
+        .setScale(scale)
+        .setDepth(3);
+
+    officeGroup.add(office);
+
+    const destinationX =
+        gameWidth - office.displayWidth / 2 + 25;
+
+    const travel = Math.max(
+        1,
+        office.x - destinationX
+    );
+
+    let previousX = office.x;
+
+    scene.tweens.add({
+        targets: office,
+        x: destinationX,
+        duration: travel / 350 * 1000,
+        ease: 'Linear',
+
+        onUpdate: () => {
+            const moved = previousX - office.x;
+            previousX = office.x;
+
+            if (roadSprite) {
+                roadSprite.tilePositionX += moved / roadScale;
+            }
+
+            scrollBackgrounds(scene, moved * 0.08);
+        },
+
+        onComplete: () => {
+            const heroTargetX = Math.min(
+                gameWidth - 190,
+                Math.max(playerView.x + 80, office.x - 35)
+            );
+
+            scene.tweens.add({
+                targets: playerView,
+                x: heroTargetX,
+                duration: 750,
+
+                onUpdate: () => {
+                    playerShadow.x = playerView.x;
+                },
+
+                onComplete: () => {
+                    SoundFx.win();
+
+                    scene.time.delayedCall(
+                        700,
+                        () => showVictoryCard(scene)
+                    );
+                }
+            });
+        }
+    });
+}
+
+function showVictoryCard(scene) {
+    if (gameState !== 'WIN_CINEMATIC') return;
+
+    gameState = 'WIN_MENU';
+    updateTouchControls();
+    hidePlayer();
+
+    const windowData = imageWindow(
+        scene,
+        'win_screen',
+        0.72
+    );
+
+    if (!windowData) return;
+
+    // Оранжевая кнопка «ЗАБРАТЬ СВОЙ ПОДАРОК».
+    addWindowHotspot(
+        scene,
+        windowData,
+        0.75, 0.75,
+        0.44, 0.18,
+        () => window.open(
+            WIN_FORM_URL,
+            '_blank',
+            'noopener,noreferrer'
+        )
+    );
+
+    // Нижняя текстовая ссылка «Сыграть ещё раз».
+    addWindowHotspot(
+        scene,
+        windowData,
+        0.76, 0.90,
+        0.30, 0.11,
+        () => showCharacterSelect(scene)
+    );
+}
