@@ -19,13 +19,11 @@ const GROUND_Y = 500;
 const SHADOW_Y = GROUND_Y - 3;
 const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
-const BAKERY_CLIP_BOTTOM = 470;
-const BAKERY_HEIGHT = 530;
-const BAKERY_BOTTOM_Y = 500;
-const BAKERY_CENTER_X = 125;
-
-const OFFICE_HEIGHT = 475;
-const OFFICE_BOTTOM_Y = 462;
+const BAKERY_HEIGHT = 440;
+const BAKERY_BOTTOM_Y = 475;
+// Офисный PNG содержит собственную ограду и тротуар.
+const OFFICE_HEIGHT = H;
+const OFFICE_BOTTOM_Y = H;
 
 /*
  * Прежняя высота отображения была около 116 игровых пикселей.
@@ -67,7 +65,7 @@ const ASSETS = {
     bg_seg_7: 'https://static.tildacdn.com/tild3033-3763-4361-a561-373239303463/7.jpg',
 
     road_tex: 'https://static.tildacdn.com/tild6432-3031-4361-b634-616538333964/road.png',
-    bakery: 'https://static.tildacdn.com/tild3730-3136-4934-b635-373562643533/__.png',
+    bakery: 'https://static.tildacdn.com/tild3133-6339-4534-b532-613938663837/bakery.png',
     office: 'https://static.tildacdn.com/tild6434-3461-4932-a466-643136336132/-_.png',
     logo_33: 'https://static.tildacdn.com/tild3362-3565-4136-a661-313237623834/_6.png',
 
@@ -205,7 +203,6 @@ let backgrounds = [];
 let nextBackgroundIndex = 1;
 
 let bakerySprite = null;
-let bakeryMaskGraphics = null;
 
 let obstacles, platforms, bonuses, birds;
 let cursors, keys;
@@ -225,9 +222,12 @@ let realDistance = 0;
 let gameSeconds = 0;
 let baseSpeed = 315;
 
-let nextObstacle = 25;
+let nextObstacle = 130;
 let nextBonus = 38;
-let nextBird = 75;
+let nextBird = 350;
+let birdAttackPending = false;
+let lastBirdDistance = -1000;
+let lastObstacleDistance = -1000;
 
 let hearts = 1;
 let shields = 0;
@@ -489,49 +489,22 @@ function removeBakery() {
         bakerySprite.destroy();
         bakerySprite = null;
     }
-
-    if (bakeryMaskGraphics) {
-        bakeryMaskGraphics.destroy();
-        bakeryMaskGraphics = null;
-    }
 }
 
 function createBakery(scene) {
     removeBakery();
-
     if (!scene.textures.exists('bakery')) return;
 
-    const source = scene.textures
-        .get('bakery')
-        .getSourceImage();
+    const source = scene.textures.get('bakery').getSourceImage();
+    const scale = BAKERY_HEIGHT / Math.max(1, source.height);
+    const width = source.width * scale;
 
+    // Прозрачное здание слева от героя, дорога под ним продолжается.
     bakerySprite = scene.add
-        .image(
-            BAKERY_CENTER_X,
-            BAKERY_BOTTOM_Y,
-            'bakery'
-        )
+        .image(playerStartX() - 40 - width / 2, BAKERY_BOTTOM_Y, 'bakery')
         .setOrigin(0.5, 1)
-        .setScale(BAKERY_HEIGHT / Math.max(1, source.height))
+        .setScale(scale)
         .setDepth(6);
-
-    bakeryMaskGraphics = scene.make.graphics({
-        x: 0,
-        y: 0,
-        add: false
-    });
-
-    bakeryMaskGraphics.fillStyle(0xffffff);
-    bakeryMaskGraphics.fillRect(
-        0,
-        0,
-        Math.max(2400, gameWidth + 1000),
-        BAKERY_CLIP_BOTTOM
-    );
-
-    bakerySprite.setMask(
-        bakeryMaskGraphics.createGeometryMask()
-    );
 }
 
 /* ======================= Телефон ======================= */
@@ -734,6 +707,13 @@ function create() {
     bonuses = this.physics.add.group();
     birds = this.physics.add.group();
 
+    // Arcade Physics сдвигает спрайты ПОСЛЕ update(); синхронизируем
+    // тени после физического шага, чтобы они не отставали на один кадр.
+    this.physics.world.on('worldstep', () => {
+        obstacles.getChildren().forEach(syncObjectShadow);
+        platforms.getChildren().forEach(syncObjectShadow);
+    });
+
     this.physics.add.collider(player, ground, () => {
         jumpCount = 0;
     });
@@ -825,7 +805,7 @@ function create() {
         );
     }
 
-    showStartScreen(this);
+    showCharacterSelect(this);
     updateOrientation();
 
     this.time.delayedCall(300, resizeGame);
@@ -1225,9 +1205,9 @@ function showCharacterSelect(scene) {
             scene,
             windowData,
             item.x,
-            0.64,
+            0.61,
             0.20,
-            0.14,
+            0.13,
             () => startRace(scene, item.hero)
         );
     });
@@ -1269,7 +1249,7 @@ function startRace(scene, heroKey) {
     clearOffice();
     clearUI();
 
-    hearts = hero.hearts;
+    hearts = Math.max(2, hero.hearts);
     shields = 0;
     boxes = hero.boxes;
 
@@ -1277,9 +1257,13 @@ function startRace(scene, heroKey) {
     gameSeconds = 0;
     baseSpeed = 315;
 
-    nextObstacle = 25;
+    // Первые секунды без препятствий: время освоиться с управлением.
+    nextObstacle = 130;
     nextBonus = 38;
-    nextBird = 75;
+    nextBird = 350;
+    birdAttackPending = false;
+    lastBirdDistance = -1000;
+    lastObstacleDistance = -1000;
 
     jumpCount = 0;
     isSliding = false;
@@ -1339,13 +1323,6 @@ function startRace(scene, heroKey) {
 
 function update(time, delta) {
     if (portraitBlocked) return;
-
-    if (gameState === 'START_SCREEN') {
-        if (Phaser.Input.Keyboard.JustDown(cursors.space)) {
-            showCharacterSelect(this);
-        }
-        return;
-    }
 
     if (gameState === 'CHARACTER_SELECT') {
         if (Phaser.Input.Keyboard.JustDown(keys.one)) {
@@ -1500,25 +1477,25 @@ function update(time, delta) {
         attractBonuses(this);
     }
 
+    // Чайка не появляется одновременно с другим препятствием.
     if (
         realDistance >= nextBird &&
-        realDistance < TARGET_DISTANCE - 150
+        realDistance < TARGET_DISTANCE - 150 &&
+        !birdAttackPending &&
+        birds.countActive() === 0 &&
+        realDistance - lastObstacleDistance > 95
     ) {
         launchBird(this);
-
-        nextBird = realDistance +
-            (
-                realDistance < 1000
-                    ? 95
-                    : realDistance < 2200
-                        ? 75
-                        : 60
-            );
+        lastBirdDistance = realDistance;
+        nextBird = realDistance + 550;
     }
 
     if (
         realDistance >= nextObstacle &&
-        realDistance < TARGET_DISTANCE - 100
+        realDistance < TARGET_DISTANCE - 100 &&
+        !birdAttackPending &&
+        birds.countActive() === 0 &&
+        realDistance - lastBirdDistance > 95
     ) {
         spawnChallenge(this);
     }
@@ -1618,42 +1595,37 @@ function fitBody(sprite, width, height) {
 
 function attachShadow(scene, object, width) {
     object.shadowRef = scene.add
-        .ellipse(
-            object.x,
-            SHADOW_Y,
-            width,
-            12,
-            0x000000,
-            0.33
-        )
+        .ellipse(object.x, SHADOW_Y, width, 12, 0x000000, 0.27)
         .setDepth(6);
+    // Координата тени синхронизируется с предметом каждый кадр.
+}
+
+function syncObjectShadow(object) {
+    if (!object.shadowRef || !object.shadowRef.active) return;
+    object.shadowRef.x = object.x;
+    object.shadowRef.y = SHADOW_Y;
+    if (object.texture.key === 'obs_pot') {
+        object.shadowRef.setAlpha(Math.max(0.12, 0.33 - (GROUND_Y - object.y) / 1800));
+    }
 }
 
 function spawnChallenge(scene) {
     const pattern = Phaser.Math.Between(1, 5);
 
     if (pattern === 1 || pattern === 5) {
-        createObstacle(
-            scene,
-            'obs_pallet',
-            115, 85,
-            105, 75
-        );
+        // Паллету можно перепрыгнуть или приземлиться на неё.
+        createPlatform(scene, 'obs_pallet', 115, 85, 105, 75, -8);
     } else if (pattern === 2) {
-        createObstacle(
-            scene,
-            'obs_scooter',
-            135, 65,
-            125, 55
-        );
+        // Самокат — только препятствие, стоять на нём нельзя.
+        createObstacle(scene, 'obs_scooter', 135, 65, 125, 55);
     } else if (pattern === 3) {
         spawnBarrier(scene);
     } else {
         spawnPot(scene);
     }
 
-    nextObstacle =
-        realDistance + Phaser.Math.Between(48, 65);
+    lastObstacleDistance = realDistance;
+    nextObstacle = realDistance + Phaser.Math.Between(90, 120);
 }
 
 function createObstacle(
@@ -1681,32 +1653,27 @@ function createObstacle(
     object.setVelocityX(-baseSpeed);
     object.obstacleType = 'bottom';
 
-    attachShadow(
-        scene,
-        object,
-        Math.min(100, visibleWidth)
-    );
+    attachShadow(scene, object, visibleWidth * 0.85);
+}
+
+function createPlatform(scene, key, width, height, hitWidth, hitHeight, offsetY = 0) {
+    const platform = platforms
+        .create(gameWidth + 80, OBSTACLE_BOTTOM_Y + offsetY, key)
+        .setOrigin(0.5, 1)
+        .setDisplaySize(width, height)
+        .setDepth(7);
+
+    fitBody(platform, hitWidth, hitHeight);
+    platform.body.allowGravity = false;
+    platform.setImmovable(true);
+    platform.setVelocityX(-baseSpeed);
+    platform.obstacleType = 'bottom';
+    attachShadow(scene, platform, width * 0.85);
+    return platform;
 }
 
 function spawnBarrier(scene) {
-    const barrier = platforms
-        .create(
-            gameWidth + 80,
-            OBSTACLE_BOTTOM_Y,
-            'obs_barrier'
-        )
-        .setOrigin(0.5, 1)
-        .setDisplaySize(120, 90)
-        .setDepth(7);
-
-    fitBody(barrier, 105, 80);
-
-    barrier.body.allowGravity = false;
-    barrier.setImmovable(true);
-    barrier.setVelocityX(-baseSpeed);
-    barrier.obstacleType = 'bottom';
-
-    attachShadow(scene, barrier, 90);
+    createPlatform(scene, 'obs_barrier', 120, 90, 105, 80);
 }
 
 function spawnPot(scene) {
@@ -1725,7 +1692,7 @@ function spawnPot(scene) {
     pot.setVelocity(-baseSpeed * 0.55, 570);
     pot.obstacleType = 'top';
 
-    attachShadow(scene, pot, 45);
+    attachShadow(scene, pot, 58);
 }
 
 function spawnBonus(scene) {
@@ -1760,11 +1727,11 @@ function getBonus(hero, bonus) {
     if (gameState !== 'PLAYING' || !bonus.active) return;
 
     if (bonus.bonusKey === 'bonus_box') {
-        boxes++;
+        boxes = Math.min(2, boxes + 1);
     } else if (bonus.bonusKey === 'bonus_shield') {
-        shields++;
+        shields = Math.min(2, shields + 1);
     } else {
-        hearts++;
+        hearts = Math.min(3, hearts + 1);
     }
 
     bonus.destroy();
@@ -1810,69 +1777,27 @@ function createBird(scene, x, y, flipX) {
 
 function launchBird(scene) {
     const thisRace = raceId;
+    birdAttackPending = true;
+    warningText.setVisible(true);
+    SoundFx.gull();
 
-    if (Phaser.Math.Between(0, 1) === 1) {
-        warningText.setVisible(true);
+    // Сначала хорошо заметное предупреждение; никаких вылетов снизу.
+    scene.time.delayedCall(1100, () => {
+        if (thisRace !== raceId || gameState !== 'PLAYING') return;
+        birdAttackPending = false;
+        warningText.setVisible(false);
+
+        const startX = Math.max(gameWidth + 65, player.x + 470);
+        const bird = createBird(scene, startX, 105, false);
+        // Курс фиксируется один раз: птица не телепортируется за героем.
+        // Пикирует справа налево примерно к уровню торта.
+        const targetX = player.x + 15;
+        const targetY = GROUND_Y - 90;
+        const flightTime = 1.75;
+        bird.setVelocity((targetX - startX) / flightTime,
+            (targetY - 105) / flightTime);
+        bird.setRotation(-0.35);
         SoundFx.gull();
-
-        scene.time.delayedCall(700, () => {
-            if (
-                thisRace !== raceId ||
-                gameState !== 'PLAYING'
-            ) {
-                return;
-            }
-
-            warningText.setVisible(false);
-
-            const bird = createBird(
-                scene,
-                -60,
-                GROUND_Y - 68,
-                true
-            );
-
-            bird.setVelocityX(baseSpeed + 260);
-        });
-
-        return;
-    }
-
-    const bird = createBird(
-        scene,
-        Math.min(gameWidth - 70, player.x + 320),
-        92,
-        false
-    );
-
-    bird.setVelocityX(-70);
-    bird.setTint(0xff7777);
-
-    scene.time.delayedCall(360, () => {
-        if (
-            thisRace !== raceId ||
-            gameState !== 'PLAYING' ||
-            !bird.active
-        ) {
-            return;
-        }
-
-        bird.clearTint();
-        SoundFx.gull();
-
-        const angle = Math.atan2(
-            GROUND_Y - 75 - bird.y,
-            player.x - bird.x
-        );
-
-        const speed = 640;
-
-        bird.setVelocity(
-            Math.cos(angle) * speed,
-            Math.sin(angle) * speed
-        );
-
-        bird.setRotation(angle);
     });
 }
 
@@ -1907,10 +1832,6 @@ function updateRaceObjects(scene, speed, delta) {
             object.setVelocityX(-speed);
         }
 
-        if (object.shadowRef && object.shadowRef.active) {
-            object.shadowRef.x = object.x;
-        }
-
         if (object.x < -140) {
             destroyWithShadow(object);
         }
@@ -1920,10 +1841,6 @@ function updateRaceObjects(scene, speed, delta) {
         if (!object.active) return;
 
         object.setVelocityX(-speed);
-
-        if (object.shadowRef && object.shadowRef.active) {
-            object.shadowRef.x = object.x;
-        }
 
         if (object.x < -140) {
             destroyWithShadow(object);
@@ -2176,10 +2093,7 @@ function startOfficeArrival(scene) {
     const scale =
         OFFICE_HEIGHT / Math.max(1, source.height);
 
-    /*
-     * Здание за road.png: depth 3 против depth 5.
-     * Во время подъезда дорога продолжает прокручиваться.
-     */
+    /* PNG содержит ограду и тротуар: передняя часть перекрывает road.png. */
     const office = scene.add
         .image(
             gameWidth + source.width * scale / 2,
@@ -2188,12 +2102,12 @@ function startOfficeArrival(scene) {
         )
         .setOrigin(0.5, 1)
         .setScale(scale)
-        .setDepth(3);
+        .setDepth(6);
 
     officeGroup.add(office);
 
     const destinationX =
-        gameWidth - office.displayWidth / 2 + 25;
+        gameWidth - office.displayWidth / 2;
 
     const travel = Math.max(
         1,
@@ -2222,7 +2136,8 @@ function startOfficeArrival(scene) {
         onComplete: () => {
             const heroTargetX = Math.min(
                 gameWidth - 190,
-                Math.max(playerView.x + 80, office.x - 35)
+                Math.max(playerView.x + 80,
+                    office.x - office.displayWidth / 2 + office.displayWidth * 0.68)
             );
 
             scene.tweens.add({
