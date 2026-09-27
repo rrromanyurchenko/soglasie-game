@@ -20,7 +20,9 @@ const SHADOW_Y = GROUND_Y - 3;
 const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
 const BAKERY_HEIGHT = 540;
-const BAKERY_BOTTOM_Y = 540;
+// Низ картинки не совпадает с линией мостовой.
+const BAKERY_BOTTOM_Y = 574;
+const BAKERY_START_OVERLAP = 75;
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
 const OFFICE_BOTTOM_Y = H;
@@ -35,21 +37,21 @@ const HEROES = {
     artem: {
         prefix: 'p',
         gravityY: 1100,
-        jumpForce: -620,
+        jumpForce: -740,
         hearts: 1,
         boxes: 0
     },
     maksim: {
         prefix: 'o',
         gravityY: 1600,
-        jumpForce: -680,
+        jumpForce: -820,
         hearts: 1,
         boxes: 0
     },
     viktoria: {
         prefix: 'g',
         gravityY: 1600,
-        jumpForce: -680,
+        jumpForce: -820,
         hearts: 1,
         boxes: 1
     }
@@ -88,6 +90,13 @@ const ASSETS = {
     bird_3: 'https://static.tildacdn.com/tild3462-3030-4236-a137-353336626536/gull3.png',
     bird_4: 'https://static.tildacdn.com/tild6533-6230-4633-b438-303962353138/gull4.png',
     bird_5: 'https://static.tildacdn.com/tild3833-6434-4463-b839-633430643130/gull5.png',
+    bird_low_1: 'https://static.tildacdn.com/tild6235-6263-4163-b630-643265626565/b1.png',
+    bird_low_2: 'https://static.tildacdn.com/tild6133-3830-4635-a563-303932653431/b2.png',
+    bird_low_3: 'https://static.tildacdn.com/tild6134-3038-4139-a463-363134626531/b3.png',
+    bird_low_4: 'https://static.tildacdn.com/tild3634-6465-4461-b366-303065333835/b5.png',
+    bird_dive_1: 'https://static.tildacdn.com/tild3162-3634-4835-b666-356631353165/b7.png',
+    bird_dive_2: 'https://static.tildacdn.com/tild3063-3166-4139-a165-323738613733/b8.png',
+    bird_dive_3: 'https://static.tildacdn.com/tild6434-6230-4235-a265-666564663731/b9.png',
 
     bonus_box: 'https://static.tildacdn.com/tild6266-3762-4931-b336-636566343761/box.png',
     bonus_shield: 'https://static.tildacdn.com/tild3734-3066-4761-a136-643662383662/shield.png',
@@ -243,6 +252,7 @@ let runTimer = 0;
 let runFrame = 1;
 let birdTimer = 0;
 let birdFrame = 1;
+let birdAttackNumber = 0;
 
 let raceId = 0;
 let invulnerabilityTween = null;
@@ -499,9 +509,9 @@ function createBakery(scene) {
     const scale = BAKERY_HEIGHT / Math.max(1, source.height);
     const width = source.width * scale;
 
-    // Прозрачное здание слева от героя, дорога под ним продолжается.
+    // Дверь видна слева, край здания перекрывает ограду дороги.
     bakerySprite = scene.add
-        .image(playerStartX() - 40 - width / 2, BAKERY_BOTTOM_Y, 'bakery')
+        .image(playerStartX() + BAKERY_START_OVERLAP - width / 2, BAKERY_BOTTOM_Y, 'bakery')
         .setOrigin(0.5, 1)
         .setScale(scale)
         .setDepth(6);
@@ -1274,6 +1284,7 @@ function startRace(scene, heroKey) {
     runFrame = 1;
     birdTimer = 0;
     birdFrame = 1;
+    birdAttackNumber = 0;
 
     resetTouchFlags();
     resetBackgrounds(scene);
@@ -1595,7 +1606,7 @@ function fitBody(sprite, width, height) {
 
 function attachShadow(scene, object, width) {
     object.shadowRef = scene.add
-        .ellipse(object.x, SHADOW_Y, width, 12, 0x000000, 0.27)
+        .ellipse(object.x, SHADOW_Y, width, 7, 0x000000, 0.18)
         .setDepth(6);
     // Координата тени синхронизируется с предметом каждый кадр.
 }
@@ -1614,7 +1625,7 @@ function spawnChallenge(scene) {
 
     if (pattern === 1 || pattern === 5) {
         // Паллету можно перепрыгнуть или приземлиться на неё.
-        createPlatform(scene, 'obs_pallet', 115, 85, 105, 75, -8);
+        createPlatform(scene, 'obs_pallet', 115, 85, 105, 75, -19);
     } else if (pattern === 2) {
         // Самокат — только препятствие, стоять на нём нельзя.
         createObstacle(scene, 'obs_scooter', 135, 65, 125, 55);
@@ -1668,7 +1679,7 @@ function createPlatform(scene, key, width, height, hitWidth, hitHeight, offsetY 
     platform.setImmovable(true);
     platform.setVelocityX(-baseSpeed);
     platform.obstacleType = 'bottom';
-    attachShadow(scene, platform, width * 0.85);
+    attachShadow(scene, platform, key === 'obs_barrier' ? 54 : width * 0.78);
     return platform;
 }
 
@@ -1760,59 +1771,68 @@ function attractBonuses(scene) {
 
 /* ====================== Клюв Клювыч ====================== */
 
-function createBird(scene, x, y, flipX) {
+function createBird(scene, x, y, mode) {
     const bird = birds
-        .create(x, y, 'bird_1')
+        .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_dive_1')
         .setDisplaySize(84, 60)
-        .setFlipX(Boolean(flipX))
+        // Низ: кадры смотрят вправо; пикирование: разворачиваем налево.
+        .setFlipX(mode === 'dive')
         .setDepth(8);
 
     fitBody(bird, 58, 30);
-
     bird.body.allowGravity = false;
     bird.obstacleType = 'top';
-
+    bird.flightMode = mode;
+    bird.frameIndex = 0;
+    bird.frameElapsed = 0;
     return bird;
 }
 
 function launchBird(scene) {
     const thisRace = raceId;
+    // Чередуем виды атаки: сначала обучающий низкий пролёт.
+    const mode = birdAttackNumber++ % 2 === 0 ? 'low' : 'dive';
     birdAttackPending = true;
     warningText.setVisible(true);
     SoundFx.gull();
 
-    // Сначала хорошо заметное предупреждение; никаких вылетов снизу.
-    scene.time.delayedCall(1100, () => {
+    scene.time.delayedCall(1200, () => {
         if (thisRace !== raceId || gameState !== 'PLAYING') return;
         birdAttackPending = false;
         warningText.setVisible(false);
 
-        const startX = Math.max(gameWidth + 65, player.x + 470);
-        const bird = createBird(scene, startX, 105, false);
-        // Курс фиксируется один раз: птица не телепортируется за героем.
-        // Пикирует справа налево примерно к уровню торта.
-        const targetX = player.x + 15;
-        const targetY = GROUND_Y - 90;
-        const flightTime = 1.75;
-        bird.setVelocity((targetX - startX) / flightTime,
-            (targetY - 105) / flightTime);
-        bird.setRotation(-0.35);
+        if (mode === 'low') {
+            // Летит СЛЕВА НАПРАВО над головой присевшего героя.
+            // Даже при пограничном контакте подкат защищает от птицы.
+            const bird = createBird(scene, -80, GROUND_Y - 68, 'low');
+            bird.setVelocityX(Math.max(410, baseSpeed + 150));
+        } else {
+            const startX = Math.max(gameWidth + 65, player.x + 470);
+            const bird = createBird(scene, startX, 105, 'dive');
+            const flightTime = 1.75;
+            bird.setVelocity(
+                (player.x + 15 - startX) / flightTime,
+                (GROUND_Y - 90 - 105) / flightTime
+            );
+            bird.setRotation(-0.35);
+        }
         SoundFx.gull();
     });
 }
 
 function animateBirds(scene, delta) {
-    birdTimer += delta;
-    if (birdTimer < 90) return;
-
-    birdTimer = 0;
-    birdFrame = birdFrame % 5 + 1;
-
-    const key = `bird_${birdFrame}`;
-    if (!scene.textures.exists(key)) return;
-
     birds.getChildren().forEach(bird => {
-        if (bird.active) bird.setTexture(key);
+        if (!bird.active) return;
+        bird.frameElapsed += delta;
+        if (bird.frameElapsed < 95) return;
+        bird.frameElapsed = 0;
+        const mode = bird.flightMode;
+        const frames = mode === 'low'
+            ? ['bird_low_1', 'bird_low_2', 'bird_low_3', 'bird_low_4']
+            : ['bird_dive_1', 'bird_dive_2', 'bird_dive_3'];
+        bird.frameIndex = (bird.frameIndex + 1) % frames.length;
+        const key = frames[bird.frameIndex];
+        if (scene.textures.exists(key)) bird.setTexture(key);
     });
 }
 
@@ -2134,10 +2154,11 @@ function startOfficeArrival(scene) {
         },
 
         onComplete: () => {
+            // Дверь левее прежней точки (.68).
+            const officeLeft = office.x - office.displayWidth / 2;
             const heroTargetX = Math.min(
-                gameWidth - 190,
-                Math.max(playerView.x + 80,
-                    office.x - office.displayWidth / 2 + office.displayWidth * 0.68)
+                gameWidth - 120,
+                officeLeft + office.displayWidth * 0.60
             );
 
             scene.tweens.add({
@@ -2150,12 +2171,13 @@ function startOfficeArrival(scene) {
                 },
 
                 onComplete: () => {
+                    playerView.x = heroTargetX;
+                    playerView.y = GROUND_Y;
+                    playerShadow.x = heroTargetX;
+                    // update() уже остановлен: фиксируем кадр у двери.
+                    setHeroFrame(1);
                     SoundFx.win();
-
-                    scene.time.delayedCall(
-                        700,
-                        () => showVictoryCard(scene)
-                    );
+                    scene.time.delayedCall(700, () => showVictoryCard(scene));
                 }
             });
         }
@@ -2183,11 +2205,8 @@ function showVictoryCard(scene) {
         windowData,
         0.75, 0.75,
         0.44, 0.18,
-        () => window.open(
-            WIN_FORM_URL,
-            '_blank',
-            'noopener,noreferrer'
-        )
+        // Во встроенном браузере iPhone новая вкладка может блокироваться.
+        () => window.location.assign(WIN_FORM_URL)
     );
 
     // Нижняя текстовая ссылка «Сыграть ещё раз».
