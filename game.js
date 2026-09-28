@@ -22,7 +22,7 @@ const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 const BAKERY_HEIGHT = 540;
 // Низ картинки не совпадает с линией мостовой.
 const BAKERY_BOTTOM_Y = 574;
-const BAKERY_START_OVERLAP = 300; // Вход остаётся рядом с героем при старте.
+// При старте левая граница здания совпадает с краем игрового экрана.
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
 const OFFICE_BOTTOM_Y = H;
@@ -257,6 +257,7 @@ let birdAttackNumber = 0;
 let raceId = 0;
 let invulnerabilityTween = null;
 let heroScales = {};
+let slideScale = {};
 
 window.touchMoveLeft = false;
 window.touchMoveRight = false;
@@ -351,24 +352,25 @@ function preload() {
 function calculateHeroScales(scene) {
     Object.entries(HEROES).forEach(([heroKey, hero]) => {
         let maximumHeight = 1;
+        let runningHeight = 1;
 
-        for (let frame = 1; frame <= 9; frame++) {
+        for (let frame = 1; frame <= 8; frame++) {
             const key = hero.prefix + frame;
-
             if (!scene.textures.exists(key)) continue;
-
-            const source = scene.textures
-                .get(key)
-                .getSourceImage();
-
-            maximumHeight = Math.max(
-                maximumHeight,
-                source.height || 1
-            );
+            const source = scene.textures.get(key).getSourceImage();
+            maximumHeight = Math.max(maximumHeight, source.height || 1);
+            if (frame <= 6) runningHeight = Math.max(runningHeight, source.height || 1);
         }
 
-        heroScales[heroKey] =
-            HERO_DISPLAY_HEIGHT / maximumHeight;
+        heroScales[heroKey] = HERO_DISPLAY_HEIGHT / maximumHeight;
+        const slideKey = hero.prefix + '9';
+        const slideHeight = scene.textures.exists(slideKey)
+            ? scene.textures.get(slideKey).getSourceImage().height || 1
+            : runningHeight;
+        // Присевший ниже бегущего; огромный исходный PNG кадра 9
+        // не должен делать персонажа крупнее при смене позы.
+        slideScale[heroKey] = heroScales[heroKey] *
+            Math.min(1, runningHeight * 0.72 / slideHeight);
     });
 }
 
@@ -379,7 +381,7 @@ function setHeroFrame(frame) {
 
     playerView
         .setTexture(key)
-        .setScale(heroScales[selectedHero]);
+        .setScale(frame === 9 ? slideScale[selectedHero] : heroScales[selectedHero]);
 }
 
 /* ========================== Фоны ========================== */
@@ -509,9 +511,9 @@ function createBakery(scene) {
     const scale = BAKERY_HEIGHT / Math.max(1, source.height);
     const width = source.width * scale;
 
-    // Дверь видна слева, край здания перекрывает ограду дороги.
+    // Левая граница PNG вплотную к левой границе игровой сцены.
     bakerySprite = scene.add
-        .image(playerStartX() + BAKERY_START_OVERLAP - width / 2, BAKERY_BOTTOM_Y, 'bakery')
+        .image(width / 2, BAKERY_BOTTOM_Y, 'bakery')
         .setOrigin(0.5, 1)
         .setScale(scale)
         .setDepth(6);
@@ -887,6 +889,9 @@ function createHud(scene) {
         .setDepth(94);
 
     setImageWidth(hudBar, mobile ? 380 : 345);
+    // Пауза по всей плашке; никаких новых значков поверх HUD.
+    hudBar.setInteractive({ useHandCursor: true });
+    hudBar.on('pointerdown', () => toggleRacePause(scene));
 
     /*
      * В distance_time.png уже нарисованы флажок и часы.
@@ -977,6 +982,26 @@ function updateHud() {
     hudHeartCount.setText(String(hearts));
     hudShieldCount.setText(String(shields));
     hudBoxCount.setText(String(boxes));
+}
+
+function toggleRacePause(scene) {
+    if (portraitBlocked ||
+        (gameState !== 'PLAYING' && gameState !== 'PAUSED')) return;
+
+    if (gameState === 'PLAYING') {
+        gameState = 'PAUSED';
+        resetTouchFlags();
+        player.setVelocityX(0);
+        scene.physics.world.pause();
+        scene.time.timeScale = 0;
+        scene.tweens.timeScale = 0;
+    } else {
+        gameState = 'PLAYING';
+        scene.time.timeScale = 1;
+        scene.tweens.timeScale = 1;
+        scene.physics.world.resume();
+    }
+    updateTouchControls();
 }
 
 /* ======================= Окна игры ======================= */
@@ -1259,9 +1284,13 @@ function startRace(scene, heroKey) {
     clearOffice();
     clearUI();
 
+    // HUD отображает текущий остаток каждого ресурса: без незаметного
+    // ограничения в 2/3 единицы для повторных подборов.
     hearts = Math.max(2, hero.hearts);
     shields = 0;
     boxes = hero.boxes;
+    scene.time.timeScale = 1;
+    scene.tweens.timeScale = 1;
 
     realDistance = 0;
     gameSeconds = 0;
@@ -1359,6 +1388,19 @@ function update(time, delta) {
     if (gameState === 'WIN_MENU') {
         if (Phaser.Input.Keyboard.JustDown(cursors.space)) {
             showCharacterSelect(this);
+        }
+        return;
+    }
+
+    if (gameState === 'WIN_CINEMATIC') {
+        // Физика остановлена, но до двери герой продолжает бежать.
+        if (playerView.y >= GROUND_Y - 1) {
+            runTimer += delta;
+            if (runTimer >= 100) {
+                runTimer %= 100;
+                runFrame = runFrame % 6 + 1;
+                setHeroFrame(runFrame);
+            }
         }
         return;
     }
@@ -1741,11 +1783,11 @@ function getBonus(hero, bonus) {
     if (gameState !== 'PLAYING' || !bonus.active) return;
 
     if (bonus.bonusKey === 'bonus_box') {
-        boxes = Math.min(2, boxes + 1);
+        boxes++;
     } else if (bonus.bonusKey === 'bonus_shield') {
-        shields = Math.min(2, shields + 1);
-    } else {
-        hearts = Math.min(3, hearts + 1);
+        shields++;
+    } else if (bonus.bonusKey === 'bonus_heart') {
+        hearts++;
     }
 
     bonus.destroy();
@@ -1780,11 +1822,12 @@ function createBird(scene, x, y, mode) {
     const bird = birds
         .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_dive_1')
         .setDisplaySize(84, 60)
-        // Низ: кадры смотрят вправо; пикирование: разворачиваем налево.
+        // Низ летит вправо, встречную чайку разворачиваем влево.
         .setFlipX(mode === 'dive')
         .setDepth(8);
 
-    fitBody(bird, 58, 30);
+    // Низкий пролёт задевает стоящего, но остаётся выше хитбокса подката.
+    fitBody(bird, 58, mode === 'low' ? 52 : 30);
     bird.body.allowGravity = false;
     bird.obstacleType = 'top';
     bird.flightMode = mode;
@@ -1809,19 +1852,19 @@ function launchBird(scene) {
         warningText.setVisible(false);
 
         if (mode === 'low') {
-            // Появляется позади героя, а не за краем широкого экрана:
-            // игрок видит атаку почти сразу после предупреждения.
-            // При пограничном контакте подкат защищает от птицы.
+            // Вылетает именно из-за левого края, а не из-за спины героя.
+            // Центр и хитбокс подняты над присевшим персонажем.
             const bird = createBird(
                 scene,
-                Math.max(-75, player.x - 260),
-                GROUND_Y - 68,
+                -65,
+                GROUND_Y - 100,
                 'low'
             );
-            bird.setVelocityX(Math.max(440, baseSpeed + 165));
+            bird.setVelocityX(Math.max(450, baseSpeed + 165));
         } else {
             const startX = Math.max(gameWidth + 65, player.x + 470);
             const bird = createBird(scene, startX, 105, 'dive');
+            bird.setFlipX(true); // встречная птица смотрит навстречу герою
             const flightTime = 1.75;
             bird.setVelocity(
                 (player.x + 15 - startX) / flightTime,
@@ -1845,7 +1888,13 @@ function animateBirds(scene, delta) {
             : ['bird_dive_1', 'bird_dive_2', 'bird_dive_3'];
         bird.frameIndex = (bird.frameIndex + 1) % frames.length;
         const key = frames[bird.frameIndex];
-        if (scene.textures.exists(key)) bird.setTexture(key);
+        if (scene.textures.exists(key)) {
+            bird.setTexture(key);
+            // У исходных кадров разные размеры: сохраняем размер чайки
+            // и её зону столкновения при смене картинки.
+            bird.setDisplaySize(84, 60);
+            fitBody(bird, 58, mode === 'low' ? 52 : 30);
+        }
     });
 }
 
@@ -1938,12 +1987,17 @@ function hitObstacle(hero, obstacle) {
         return;
     }
 
+    // Последнее сердце тоже тратится и отображается как 0 перед поражением.
     if (hearts > 0) {
         hearts--;
         destroyWithShadow(obstacle);
-        SoundFx.hit();
-        triggerInvulnerability(this);
         updateHud();
+        if (hearts === 0) {
+            showGameOver(this);
+        } else {
+            SoundFx.hit();
+            triggerInvulnerability(this);
+        }
         return;
     }
 
@@ -2110,6 +2164,23 @@ function startOfficeArrival(scene) {
     }
 
     playerView.setAlpha(1).clearTint();
+    if (isSliding) stopSlide();
+    // Заканчиваем прыжок на земле, не телепортируя героя по вертикали.
+    if (playerView.y < GROUND_Y) {
+        setHeroFrame(8);
+        scene.tweens.add({
+            targets: playerView,
+            y: GROUND_Y,
+            duration: 420,
+            ease: 'Quad.easeIn',
+            onComplete: () => { runTimer = 0; }
+        });
+    } else {
+        playerView.y = GROUND_Y;
+        setHeroFrame(1);
+    }
+    playerShadow.y = SHADOW_Y;
+    playerShadow.setDisplaySize(80, 9).setAlpha(0.28);
 
     officeGroup = scene.add.group();
 
@@ -2187,7 +2258,7 @@ function startOfficeArrival(scene) {
                     playerView.x = heroTargetX;
                     playerView.y = GROUND_Y;
                     playerShadow.x = heroTargetX;
-                    // update() уже остановлен: фиксируем кадр у двери.
+                    // Только теперь останавливаемся у двери.
                     setHeroFrame(1);
                     SoundFx.win();
                     scene.time.delayedCall(700, () => showVictoryCard(scene));
