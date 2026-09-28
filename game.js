@@ -249,8 +249,12 @@ const config = {
     },
 
     scale: {
-        mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
+        // На телефоне FIT и ручная подгонка canvas боролись за его CSS-размер:
+        // при повороте игра то раскрывалась, то схлопывалась до 183×309.
+        // Оставляем одного владельца размера: игровую область меняет resize(),
+        // а отображаемый canvas заполняет контейнер через fitMobileCanvas().
+        mode: isTouchDevice() ? Phaser.Scale.NONE : Phaser.Scale.FIT,
+        autoCenter: isTouchDevice() ? Phaser.Scale.NO_CENTER : Phaser.Scale.CENTER_BOTH,
         parent: 'game-container',
         width: gameWidth,
         height: H
@@ -622,10 +626,8 @@ function updateOrientation() {
     updateTouchControls();
 }
 
-// Phaser при повороте успевает пересчитать внутренние 1399×540,
-// но иногда оставляет CSS canvas от портретного режима (на телефоне
-// наблюдалось 183×309 при контейнере 801×309). Подгоняем именно
-// отображаемый canvas, а не только игровую область Phaser.
+// На мобильных отключён Phaser.Scale.FIT: только здесь задаём CSS-размер
+// canvas. Иначе Phaser и наш код попеременно сжимают и расширяют изображение.
 function fitMobileCanvas() {
     if (!isTouchDevice() || !sceneRef || !sceneRef.game.canvas) return;
     const container = document.getElementById('game-container');
@@ -638,6 +640,9 @@ function fitMobileCanvas() {
     canvas.style.setProperty('max-width', 'none', 'important');
     canvas.style.setProperty('max-height', 'none', 'important');
     canvas.style.setProperty('margin', '0', 'important');
+    canvas.style.setProperty('left', '0', 'important');
+    canvas.style.setProperty('top', '0', 'important');
+    canvas.style.setProperty('transform', 'none', 'important');
 }
 
 function resizeGame() {
@@ -649,7 +654,7 @@ function resizeGame() {
     const newWidth = calculateWidth();
 
     if (Math.abs(newWidth - gameWidth) < 2) {
-        sceneRef.scale.refresh();
+        // Не вызываем Phaser FIT refresh() после ручной подгонки canvas.
         fitMobileCanvas();
         resizeWindowUI();
         return;
@@ -658,7 +663,6 @@ function resizeGame() {
     gameWidth = newWidth;
 
     sceneRef.scale.resize(gameWidth, H);
-    sceneRef.scale.refresh();
     fitMobileCanvas();
     sceneRef.physics.world.setBounds(0, 0, gameWidth, H);
 
@@ -680,7 +684,7 @@ function resizeGame() {
 
     if (currentUI) currentUI.x = gameWidth / 2;
     resizeWindowUI();
-    // После раскладки браузер или Phaser могут ещё раз пересчитать FIT.
+    // Следующий кадр учитывает завершившуюся раскладку после поворота.
     requestAnimationFrame(fitMobileCanvas);
 }
 
