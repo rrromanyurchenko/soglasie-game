@@ -20,8 +20,8 @@ const SHADOW_Y = GROUND_Y - 3;
 const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
 const BAKERY_HEIGHT = 540;
-// Низ картинки не совпадает с линией мостовой.
-const BAKERY_BOTTOM_Y = 475; // низ здания совпадает с мостовой; горизонтальная привязка не меняется
+// PNG включает собственный тротуар: низ изображения совмещаем с низом сцены.
+const BAKERY_BOTTOM_Y = H;
 // При старте левая граница здания совпадает с краем игрового экрана.
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
@@ -33,28 +33,13 @@ const OFFICE_BOTTOM_Y = H;
  */
 const HERO_DISPLAY_HEIGHT = 155;
 
+// Физика одинакова для всех; отдельную суперспособность Артёма добавим позже.
+const HERO_GRAVITY = 1600;
+const HERO_JUMP_FORCE = -820;
 const HEROES = {
-    artem: {
-        prefix: 'p',
-        gravityY: 1100,
-        jumpForce: -740,
-        hearts: 1,
-        boxes: 0
-    },
-    maksim: {
-        prefix: 'o',
-        gravityY: 1600,
-        jumpForce: -820,
-        hearts: 1,
-        boxes: 0
-    },
-    viktoria: {
-        prefix: 'g',
-        gravityY: 1600,
-        jumpForce: -820,
-        hearts: 1,
-        boxes: 1
-    }
+    artem: { prefix: 'p', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 1, boxes: 0 },
+    maksim: { prefix: 'o', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 1, boxes: 0 },
+    viktoria: { prefix: 'g', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 1, boxes: 1 }
 };
 
 const ASSETS = {
@@ -232,8 +217,8 @@ let gameSeconds = 0;
 let baseSpeed = 315;
 
 let nextObstacle = 130;
-let nextBonus = 38;
-let nextBird = 350;
+let nextBonus = 75;
+let nextBird = 280;
 let birdAttackPending = false;
 let lastBirdDistance = -1000;
 let lastObstacleDistance = -1000;
@@ -370,7 +355,10 @@ function calculateHeroScales(scene) {
         // Масштаб кадра приседания считаем по его собственной высоте:
         // при смене позы персонаж остаётся того же порядка величины.
         // 0.9 оставляет его ниже бегущего, но не уменьшает целиком вдвое.
-        slideScale[heroKey] = heroScales[heroKey] * runningHeight * 0.9 / slideHeight;
+        // У девушки и очкарика крупные прозрачные поля в кадре приседа:
+        // чуть увеличиваем только этот кадр, не меняя физику или хитбокс.
+        const slideCorrection = heroKey === 'artem' ? 1 : 1.09;
+        slideScale[heroKey] = heroScales[heroKey] * runningHeight * 0.9 / slideHeight * slideCorrection;
     });
 }
 
@@ -1298,8 +1286,8 @@ function startRace(scene, heroKey) {
 
     // Первые секунды без препятствий: время освоиться с управлением.
     nextObstacle = 130;
-    nextBonus = 38;
-    nextBird = 350;
+    nextBonus = 75;
+    nextBird = 280;
     birdAttackPending = false;
     lastBirdDistance = -1000;
     lastObstacleDistance = -1000;
@@ -1490,15 +1478,6 @@ function update(time, delta) {
         cursors.down.isDown ||
         window.touchSlideActive;
 
-    if (
-        slideHeld &&
-        !grounded &&
-        selectedHero === 'viktoria' &&
-        player.body.velocity.y < 880
-    ) {
-        player.setVelocityY(880);
-    }
-
     if (slideHeld && grounded) {
         if (!isSliding) {
             startSlide();
@@ -1540,7 +1519,7 @@ function update(time, delta) {
     ) {
         launchBird(this);
         lastBirdDistance = realDistance;
-        nextBird = realDistance + 550;
+        nextBird = realDistance + 380;
     }
 
     if (
@@ -1548,8 +1527,8 @@ function update(time, delta) {
         realDistance < TARGET_DISTANCE - 100 &&
         !birdAttackPending &&
         birds.countActive() === 0 &&
-        realDistance - lastBirdDistance > 95 &&
-        nextBird - realDistance > 110
+        realDistance - lastBirdDistance > 65 &&
+        nextBird - realDistance > 85
     ) {
         spawnChallenge(this);
     }
@@ -1561,7 +1540,7 @@ function update(time, delta) {
         spawnBonus(this);
 
         nextBonus = realDistance +
-            Phaser.Math.Between(48, 70);
+            Phaser.Math.Between(105, 135);
     }
 
     animateBirds(this, delta);
@@ -1676,7 +1655,7 @@ function spawnChallenge(scene) {
     }
 
     lastObstacleDistance = realDistance;
-    nextObstacle = realDistance + Phaser.Math.Between(90, 120);
+    nextObstacle = realDistance + Phaser.Math.Between(80, 105);
 }
 
 function createObstacle(
@@ -1763,8 +1742,8 @@ function spawnBonus(scene) {
 
     // На ровной дороге предмет недоступен без прыжка; с паллеты достать можно.
     const y = Phaser.Math.RND.pick([
-        GROUND_Y - 205,
-        GROUND_Y - 225
+        GROUND_Y - 225,
+        GROUND_Y - 245
     ]);
 
     const bonus = bonuses
@@ -1821,11 +1800,10 @@ function attractBonuses(scene) {
 
 function createBird(scene, x, y, mode) {
     const bird = birds
-        .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_dive_1')
+        .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_low_1')
         .setDisplaySize(84, 60)
-        // Кадры пикирования уже нарисованы нужной стороной: отражение
-        // давало на экране клюв вправо, хотя птица летит влево.
-        .setFlipX(false)
+        // Низкий пролёт летит вправо; верхний начинается горизонтально влево.
+        .setFlipX(mode === 'dive')
         .setDepth(8);
 
     // Низкий пролёт задевает стоящего, но остаётся выше хитбокса подката.
@@ -1835,6 +1813,7 @@ function createBird(scene, x, y, mode) {
     bird.flightMode = mode;
     bird.frameIndex = 0;
     bird.frameElapsed = 0;
+    bird.diveStarted = false;
     return bird;
 }
 
@@ -1866,13 +1845,10 @@ function launchBird(scene) {
         } else {
             const startX = Math.max(gameWidth + 65, player.x + 470);
             const bird = createBird(scene, startX, 105, 'dive');
-            bird.setFlipX(false); // клюв влево, по направлению полёта
-            const flightTime = 1.75;
-            bird.setVelocity(
-                (player.x + 15 - startX) / flightTime,
-                (GROUND_Y - 90 - 105) / flightTime
-            );
-            bird.setRotation(-0.35);
+            // Сначала летит ровно на высоте 105; пикирование включается
+            // только после горизонтального подлёта к игроку.
+            bird.setVelocity(-Math.max(450, baseSpeed + 135), 0);
+            bird.diveAtX = player.x + 315;
         }
         SoundFx.gull();
     });
@@ -1881,22 +1857,33 @@ function launchBird(scene) {
 function animateBirds(scene, delta) {
     birds.getChildren().forEach(bird => {
         if (!bird.active) return;
+        if (bird.flightMode === 'dive' && !bird.diveStarted && bird.x <= bird.diveAtX) {
+            bird.diveStarted = true;
+            bird.frameIndex = 0;
+            bird.frameElapsed = 0;
+            bird.setTexture('bird_dive_1').setDisplaySize(84, 60).setFlipX(false);
+            fitBody(bird, 58, 30);
+            // Пикирует в сторону игрока, не меняя направления по X.
+            bird.setVelocityY((GROUND_Y - 90 - bird.y) * Math.abs(bird.body.velocity.x) /
+                Math.max(1, bird.x - player.x));
+            bird.setRotation(-0.35);
+        }
         bird.frameElapsed += delta;
         if (bird.frameElapsed < 95) return;
         bird.frameElapsed = 0;
         const mode = bird.flightMode;
-        const frames = mode === 'low'
+        const frames = mode === 'low' || !bird.diveStarted
             ? ['bird_low_1', 'bird_low_2', 'bird_low_3', 'bird_low_4']
             : ['bird_dive_1', 'bird_dive_2', 'bird_dive_3'];
         bird.frameIndex = (bird.frameIndex + 1) % frames.length;
         const key = frames[bird.frameIndex];
         if (scene.textures.exists(key)) {
             bird.setTexture(key);
-            bird.setFlipX(false); // кадры пикирования не отражаем при анимации
+            bird.setFlipX(mode === 'dive' && !bird.diveStarted);
             // У исходных кадров разные размеры: сохраняем размер чайки
             // и её зону столкновения при смене картинки.
             bird.setDisplaySize(84, 60);
-            fitBody(bird, 58, mode === 'low' ? 52 : 30);
+            fitBody(bird, 58, mode === 'low' || !bird.diveStarted ? 52 : 30);
         }
     });
 }
@@ -2245,7 +2232,7 @@ function startOfficeArrival(scene) {
             const officeLeft = office.x - office.displayWidth / 2;
             const heroTargetX = Math.min(
                 gameWidth - 120,
-                officeLeft + office.displayWidth * 0.60
+                officeLeft + office.displayWidth * 0.53
             );
 
             scene.tweens.add({
