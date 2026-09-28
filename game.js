@@ -643,6 +643,12 @@ function fitMobileCanvas() {
     canvas.style.setProperty('left', '0', 'important');
     canvas.style.setProperty('top', '0', 'important');
     canvas.style.setProperty('transform', 'none', 'important');
+
+    // Scale.NONE не пересчитывает координаты касаний после ручного
+    // изменения CSS-размера canvas. Без этого изображение кнопок находится
+    // в новом месте, а Phaser проверяет нажатие по прежним координатам.
+    // updateBounds обновляет canvasBounds и displayScale для InputManager.
+    sceneRef.scale.updateBounds();
 }
 
 function resizeGame() {
@@ -684,7 +690,8 @@ function resizeGame() {
 
     if (currentUI) currentUI.x = gameWidth / 2;
     resizeWindowUI();
-    // Следующий кадр учитывает завершившуюся раскладку после поворота.
+    // Следующий кадр учитывает завершившуюся раскладку после поворота
+    // и повторно синхронизирует координаты Phaser InputManager.
     requestAnimationFrame(fitMobileCanvas);
 }
 
