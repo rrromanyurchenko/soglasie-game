@@ -133,24 +133,63 @@ function viewportSize() {
     };
 }
 
-function calculateWidth() {
+function syncMobileViewport() {
+    if (!isTouchDevice()) return;
+
     const wrapper = document.getElementById('game-wrapper');
-    const rect = wrapper ? wrapper.getBoundingClientRect() : null;
+    const container = document.getElementById('game-container');
+    if (!wrapper || !container) return;
 
-    const width = rect && rect.width
-        ? rect.width
-        : window.innerWidth;
+    // Не берём размеры wrapper: после поворота CSS страницы может оставлять
+    // ему старую портретную ширину. Берём реальный видимый viewport.
+    const vp = viewportSize();
+    const width = Math.round(vp.width);
+    const height = Math.round(vp.height);
+    if (width < 1 || height < 1) return;
 
-    const height = rect && rect.height
-        ? rect.height
-        : window.innerHeight;
-
-    return Math.round(
-        H * width / Math.max(1, height)
-    );
+    Object.assign(wrapper.style, {
+        position: 'fixed',
+        left: '0',
+        top: '0',
+        width: `${width}px`,
+        height: `${height}px`,
+        maxWidth: 'none',
+        maxHeight: 'none',
+        margin: '0',
+        zIndex: '9999'
+    });
+    Object.assign(container.style, {
+        width: '100%',
+        height: '100%',
+        maxWidth: 'none',
+        maxHeight: 'none'
+    });
 }
 
+function calculateWidth() {
+    // Размер игры не должен зависеть от устаревшего размера DOM-обёртки.
+    const vp = viewportSize();
+    const wrapper = document.getElementById('game-wrapper');
+    const rect = wrapper ? wrapper.getBoundingClientRect() : null;
+    const width = isTouchDevice() ? vp.width : (rect && rect.width) || vp.width;
+    const height = isTouchDevice() ? vp.height : (rect && rect.height) || vp.height;
+    return Math.max(320, Math.round(H * width / Math.max(1, height)));
+}
+
+syncMobileViewport();
 let gameWidth = calculateWidth();
+let viewportResizeTimers = [];
+
+// Размер окна может изменяться поэтапно при повороте экрана и скрытии
+// адресной строки. Пересчитываем сцену несколько раз без reload страницы.
+function scheduleViewportResize() {
+    viewportResizeTimers.forEach(clearTimeout);
+    viewportResizeTimers = [];
+    resizeGame();
+    [100, 300, 700, 1500].forEach(delay => {
+        viewportResizeTimers.push(setTimeout(resizeGame, delay));
+    });
+}
 
 const config = {
     type: Phaser.AUTO,
@@ -554,21 +593,24 @@ function updateOrientation() {
 }
 
 function resizeGame() {
+    syncMobileViewport();
     if (!sceneRef) return;
 
     updateOrientation();
-    if (portraitBlocked) return;
-
+    // Запоминаем актуальную ширину даже в портретном режиме: иначе после
+    // поворота Phaser продолжает показывать узкий старый canvas.
     const newWidth = calculateWidth();
 
-    if (Math.abs(newWidth - gameWidth) < 8) {
+    if (Math.abs(newWidth - gameWidth) < 2) {
         sceneRef.scale.refresh();
+        resizeWindowUI();
         return;
     }
 
     gameWidth = newWidth;
 
     sceneRef.scale.resize(gameWidth, H);
+    sceneRef.scale.refresh();
     sceneRef.physics.world.setBounds(0, 0, gameWidth, H);
 
     floor.setPosition(gameWidth / 2, GROUND_Y + 10);
@@ -588,6 +630,27 @@ function resizeGame() {
     positionHudRight();
 
     if (currentUI) currentUI.x = gameWidth / 2;
+    resizeWindowUI();
+}
+
+// Не только центрируем окно: если оно было создано в портрете,
+// после поворота увеличиваем сам PNG и его интерактивные зоны.
+function resizeWindowUI() {
+    if (!currentUI || !currentUI.windowImage || !currentUI.windowImage.active) return;
+    const ui = currentUI;
+    const source = ui.windowImage.scene.textures.get(ui.windowImage.texture.key).getSourceImage();
+    const sw = source.width || 1380;
+    const sh = source.height || 780;
+    const scale = Math.min((gameWidth - 16) / sw, (H - 12) / sh);
+    ui.windowImage.setScale(scale);
+    const w = sw * scale;
+    const h = sh * scale;
+    (ui.windowHotspots || []).forEach(({ object, x, y, width, height }) => {
+        if (!object.active) return;
+        object.setPosition((x - 0.5) * w, (y - 0.5) * h);
+        object.setSize(width * w, height * h);
+        object.input.hitArea.setSize(width * w, height * h);
+    });
 }
 
 function bindHoldButton(id, flag) {
@@ -791,24 +854,20 @@ function create() {
 
     bindTouchButtons();
 
-    window.addEventListener('resize', resizeGame);
-
-    window.addEventListener(
-        'orientationchange',
-        () => setTimeout(resizeGame, 250)
-    );
-
+    window.addEventListener('resize', scheduleViewportResize);
+    window.addEventListener('orientationchange', scheduleViewportResize);
+    window.addEventListener('pageshow', scheduleViewportResize);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) scheduleViewportResize();
+    });
     if (window.visualViewport) {
-        window.visualViewport.addEventListener(
-            'resize',
-            resizeGame
-        );
+        window.visualViewport.addEventListener('resize', scheduleViewportResize);
     }
 
     showCharacterSelect(this);
     updateOrientation();
 
-    this.time.delayedCall(300, resizeGame);
+    scheduleViewportResize();
 }
 
 /* =========================== HUD =========================== */
@@ -1083,6 +1142,8 @@ function imageWindow(scene, textureKey, darken = 0.7) {
         .setScale(scale);
 
     ui.add(image);
+    ui.windowImage = image;
+    ui.windowHotspots = [];
 
     return {
         ui,
@@ -1120,6 +1181,13 @@ function addWindowHotspot(
     });
 
     windowData.ui.add(hotspot);
+    windowData.ui.windowHotspots.push({
+        object: hotspot,
+        x: centerXFraction,
+        y: centerYFraction,
+        width: widthFraction,
+        height: heightFraction
+    });
 }
 
 function showStartScreen(scene) {
