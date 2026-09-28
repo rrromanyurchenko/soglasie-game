@@ -622,6 +622,24 @@ function updateOrientation() {
     updateTouchControls();
 }
 
+// Phaser при повороте успевает пересчитать внутренние 1399×540,
+// но иногда оставляет CSS canvas от портретного режима (на телефоне
+// наблюдалось 183×309 при контейнере 801×309). Подгоняем именно
+// отображаемый canvas, а не только игровую область Phaser.
+function fitMobileCanvas() {
+    if (!isTouchDevice() || !sceneRef || !sceneRef.game.canvas) return;
+    const container = document.getElementById('game-container');
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const canvas = sceneRef.game.canvas;
+    canvas.style.setProperty('width', `${Math.round(rect.width)}px`, 'important');
+    canvas.style.setProperty('height', `${Math.round(rect.height)}px`, 'important');
+    canvas.style.setProperty('max-width', 'none', 'important');
+    canvas.style.setProperty('max-height', 'none', 'important');
+    canvas.style.setProperty('margin', '0', 'important');
+}
+
 function resizeGame() {
     syncMobileViewport();
     updateOrientation();
@@ -632,6 +650,7 @@ function resizeGame() {
 
     if (Math.abs(newWidth - gameWidth) < 2) {
         sceneRef.scale.refresh();
+        fitMobileCanvas();
         resizeWindowUI();
         return;
     }
@@ -640,6 +659,7 @@ function resizeGame() {
 
     sceneRef.scale.resize(gameWidth, H);
     sceneRef.scale.refresh();
+    fitMobileCanvas();
     sceneRef.physics.world.setBounds(0, 0, gameWidth, H);
 
     floor.setPosition(gameWidth / 2, GROUND_Y + 10);
@@ -660,6 +680,8 @@ function resizeGame() {
 
     if (currentUI) currentUI.x = gameWidth / 2;
     resizeWindowUI();
+    // После раскладки браузер или Phaser могут ещё раз пересчитать FIT.
+    requestAnimationFrame(fitMobileCanvas);
 }
 
 // Не только центрируем окно: если оно было создано в портрете,
