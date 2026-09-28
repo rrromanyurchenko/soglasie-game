@@ -21,7 +21,7 @@ const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
 const BAKERY_HEIGHT = 540;
 // Низ картинки не совпадает с линией мостовой.
-const BAKERY_BOTTOM_Y = 574;
+const BAKERY_BOTTOM_Y = 475; // низ здания совпадает с мостовой; горизонтальная привязка не меняется
 // При старте левая граница здания совпадает с краем игрового экрана.
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
@@ -72,7 +72,7 @@ const ASSETS = {
     logo_33: 'https://static.tildacdn.com/tild3362-3565-4136-a661-313237623834/_6.png',
 
     choose_screen: 'https://static.tildacdn.com/tild6132-3837-4839-b332-383362333666/choose.png',
-    die_screen: 'https://static.tildacdn.com/tild3339-6465-4262-b937-346633313137/die.png',
+    die_screen: 'https://static.tildacdn.com/tild6530-6462-4966-a131-326531393162/die2.png',
     win_screen: 'https://static.tildacdn.com/tild3562-6264-4561-b131-363764646361/win.png',
 
     hud_bar: 'https://static.tildacdn.com/tild3439-3938-4165-b038-653031613135/distance_time.png',
@@ -367,10 +367,10 @@ function calculateHeroScales(scene) {
         const slideHeight = scene.textures.exists(slideKey)
             ? scene.textures.get(slideKey).getSourceImage().height || 1
             : runningHeight;
-        // Присевший ниже бегущего; огромный исходный PNG кадра 9
-        // не должен делать персонажа крупнее при смене позы.
-        slideScale[heroKey] = heroScales[heroKey] *
-            Math.min(1, runningHeight * 0.72 / slideHeight);
+        // Масштаб кадра приседания считаем по его собственной высоте:
+        // при смене позы персонаж остаётся того же порядка величины.
+        // 0.9 оставляет его ниже бегущего, но не уменьшает целиком вдвое.
+        slideScale[heroKey] = heroScales[heroKey] * runningHeight * 0.9 / slideHeight;
     });
 }
 
@@ -1753,10 +1753,11 @@ function spawnPot(scene) {
 function spawnBonus(scene) {
     const roll = Phaser.Math.Between(1, 10);
 
+    // Коробка встречается реже: 2 из 10 бонусов вместо 4 из 10.
     const key =
-        roll <= 4
+        roll <= 2
             ? 'bonus_box'
-            : roll <= 7
+            : roll <= 6
                 ? 'bonus_shield'
                 : 'bonus_heart';
 
@@ -1822,8 +1823,9 @@ function createBird(scene, x, y, mode) {
     const bird = birds
         .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_dive_1')
         .setDisplaySize(84, 60)
-        // Низ летит вправо, встречную чайку разворачиваем влево.
-        .setFlipX(mode === 'dive')
+        // Кадры пикирования уже нарисованы нужной стороной: отражение
+        // давало на экране клюв вправо, хотя птица летит влево.
+        .setFlipX(false)
         .setDepth(8);
 
     // Низкий пролёт задевает стоящего, но остаётся выше хитбокса подката.
@@ -1864,7 +1866,7 @@ function launchBird(scene) {
         } else {
             const startX = Math.max(gameWidth + 65, player.x + 470);
             const bird = createBird(scene, startX, 105, 'dive');
-            bird.setFlipX(true); // встречная птица смотрит навстречу герою
+            bird.setFlipX(false); // клюв влево, по направлению полёта
             const flightTime = 1.75;
             bird.setVelocity(
                 (player.x + 15 - startX) / flightTime,
@@ -1890,6 +1892,7 @@ function animateBirds(scene, delta) {
         const key = frames[bird.frameIndex];
         if (scene.textures.exists(key)) {
             bird.setTexture(key);
+            bird.setFlipX(false); // кадры пикирования не отражаем при анимации
             // У исходных кадров разные размеры: сохраняем размер чайки
             // и её зону столкновения при смене картинки.
             bird.setDisplaySize(84, 60);
@@ -2061,7 +2064,7 @@ function showGameOver(scene) {
     if (!windowData) return;
 
     /*
-     * В die.png напечатан пример дистанции.
+     * В изображении окна может быть напечатан пример дистанции.
      * Пока закрываем его светлой подложкой и пишем
      * реальное расстояние. Идеально — позже получить PNG
      * без примерного числа.
