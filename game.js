@@ -20,9 +20,9 @@ const SHADOW_Y = GROUND_Y - 3;
 const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
 const BAKERY_HEIGHT = 540;
-// У PNG снизу около 55 игровых пикселей прозрачного поля: совмещаем
-// с низом сцены именно ВИДИМЫЙ тротуар, а не границу файла.
-const BAKERY_BOTTOM_Y = H + 55;
+// На скриншотах H — слишком высоко, H + 55 — слишком низко.
+// Ставим край кондитерского тротуара на уровень дороги между ними.
+const BAKERY_BOTTOM_Y = H + 28;
 // При старте левая граница здания совпадает с краем игрового экрана.
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
@@ -1801,15 +1801,15 @@ function attractBonuses(scene) {
 
 function createBird(scene, x, y, mode) {
     const bird = birds
-        .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_dive_1')
+        .create(x, y, 'bird_low_1')
         .setDisplaySize(84, 60)
-        // Пикирующая чайка всегда использует один кадр, без скачков анимации.
-        .setFlipX(false)
+        // Правая птица сначала использует ТЕ ЖЕ кадры, что и левая,
+        // но в отражении; только при пикировании — кадры b7–b9.
+        .setFlipX(mode === 'dive')
         .setDepth(8);
-    if (mode === 'dive') bird.setRotation(-Math.PI / 2); // клюв влево при подлёте
 
-    // Низкий пролёт задевает стоящего, но остаётся выше хитбокса подката.
-    fitBody(bird, 58, mode === 'low' ? 52 : 30);
+    // Низкий пролёт задевает стоящего, но проходит над присевшим.
+    fitBody(bird, 58, mode === 'low' ? 36 : 30);
     bird.body.allowGravity = false;
     bird.obstacleType = 'top';
     bird.flightMode = mode;
@@ -1840,7 +1840,7 @@ function launchBird(scene) {
             const bird = createBird(
                 scene,
                 -65,
-                GROUND_Y - 100,
+                GROUND_Y - 137,
                 'low'
             );
             bird.setVelocityX(Math.max(450, baseSpeed + 165));
@@ -1848,7 +1848,7 @@ function launchBird(scene) {
             // Начинаем внутри видимой области: горизонтальный участок
             // действительно виден до перехода в пике.
             const startX = Math.max(gameWidth - 40, player.x + 480);
-            const bird = createBird(scene, startX, GROUND_Y - 230, 'dive');
+            const bird = createBird(scene, startX, GROUND_Y - 285, 'dive');
             bird.setVelocity(-Math.max(340, baseSpeed + 30), 0);
             bird.diveAtX = player.x + 265;
         }
@@ -1863,31 +1863,30 @@ function animateBirds(scene, delta) {
             bird.diveStarted = true;
             bird.frameIndex = 0;
             bird.frameElapsed = 0;
-            // Один и тот же b7.png и при подлёте, и при пикировании;
-            // без замены кадров, только плавный разворот и траектория.
+            // Горизонтальные кадры заканчиваются; теперь кадры пикирования.
+            bird.setTexture('bird_dive_1').setDisplaySize(84, 60);
+            bird.setFlipX(false);
+            bird.setAngle(0);
             fitBody(bird, 48, 48);
             bird.setVelocityY((GROUND_Y - 95 - bird.y) * Math.abs(bird.body.velocity.x) /
                 Math.max(1, bird.x - player.x));
-            bird.setRotation(-2.35);
         }
-        // Пикирующая чайка неподвижна по кадрам: анимируем только низкий пролёт.
-        if (bird.flightMode === 'dive') return;
         bird.frameElapsed += delta;
-        if (bird.frameElapsed < 95) return;
+        if (bird.frameElapsed < 120) return;
         bird.frameElapsed = 0;
-        const mode = bird.flightMode;
-        const frames = mode === 'low' || !bird.diveStarted
-            ? ['bird_low_1', 'bird_low_2', 'bird_low_3', 'bird_low_4']
-            : ['bird_dive_1', 'bird_dive_2', 'bird_dive_3'];
+        const diving = bird.flightMode === 'dive' && bird.diveStarted;
+        const frames = diving
+            ? ['bird_dive_1', 'bird_dive_2', 'bird_dive_3']
+            : ['bird_low_1', 'bird_low_2', 'bird_low_3', 'bird_low_4'];
         bird.frameIndex = (bird.frameIndex + 1) % frames.length;
         const key = frames[bird.frameIndex];
         if (scene.textures.exists(key)) {
             bird.setTexture(key);
-            bird.setFlipX(mode === 'dive' && !bird.diveStarted);
-            // У исходных кадров разные размеры: сохраняем размер чайки
-            // и её зону столкновения при смене картинки.
+            bird.setFlipX(bird.flightMode === 'dive' && !diving);
+            // Все кадры держим в одном размере и пересчитываем хитбокс.
             bird.setDisplaySize(84, 60);
-            fitBody(bird, 58, mode === 'low' || !bird.diveStarted ? 52 : 30);
+            fitBody(bird, diving ? 48 : 58,
+                diving ? 48 : bird.flightMode === 'low' ? 36 : 30);
         }
     });
 }
