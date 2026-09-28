@@ -124,13 +124,49 @@ function isTouchDevice() {
     return window.matchMedia('(pointer: coarse)').matches;
 }
 
-function viewportSize() {
-    const viewport = window.visualViewport;
+// Без viewport-тега мобильный браузер может сохранить портретную
+// «виртуальную» ширину страницы даже после поворота. Ставим тег до
+// создания Phaser; HTML страницы по возможности тоже должен содержать его.
+function ensureMobileViewportMeta() {
+    if (!isTouchDevice()) return;
+    let meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = 'viewport';
+        document.head.appendChild(meta);
+    }
+    const content = meta.getAttribute('content') || '';
+    if (!/width\s*=\s*device-width/i.test(content)) {
+        meta.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
+    }
+}
 
-    return {
-        width: viewport ? viewport.width : window.innerWidth,
-        height: viewport ? viewport.height : window.innerHeight
-    };
+ensureMobileViewportMeta();
+
+function isLandscapeViewport() {
+    // При повороте orientation меняется раньше размеров visualViewport.
+    const orientation = window.screen && window.screen.orientation;
+    if (orientation && orientation.type) return orientation.type.startsWith('landscape');
+    if (typeof window.orientation === 'number') return Math.abs(window.orientation) === 90;
+    return window.matchMedia('(orientation: landscape)').matches;
+}
+
+function viewportSize() {
+    const vv = window.visualViewport;
+    let width = vv ? vv.width : window.innerWidth;
+    let height = vv ? vv.height : window.innerHeight;
+    if (!isTouchDevice()) return { width, height };
+
+    // visualViewport иногда задерживается на старой портретной геометрии.
+    // На такой короткий промежуток используем физическую ширину экрана
+    // в CSS-пикселях (а не старую ширину обёртки / canvas).
+    const sw = window.screen && window.screen.width || 0;
+    const sh = window.screen && window.screen.height || 0;
+    if (isLandscapeViewport() && width < height) {
+        width = Math.max(window.innerWidth || 0, sw, sh, width, height);
+        height = Math.min(window.innerHeight || height, sw || height, sh || height, height);
+    }
+    return { width, height };
 }
 
 function syncMobileViewport() {
@@ -567,13 +603,7 @@ function updateTouchControls() {
 }
 
 function updateOrientation() {
-    if (!sceneRef) return;
-
-    const vp = viewportSize();
-
-    portraitBlocked =
-        isTouchDevice() &&
-        vp.height > vp.width;
+    portraitBlocked = isTouchDevice() && !isLandscapeViewport();
 
     const overlay = document.getElementById('rotate-device');
 
@@ -582,10 +612,10 @@ function updateOrientation() {
             portraitBlocked ? 'flex' : 'none';
     }
 
-    if (portraitBlocked) {
+    if (sceneRef && portraitBlocked) {
         sceneRef.physics.world.pause();
         resetTouchFlags();
-    } else if (gameState === 'PLAYING') {
+    } else if (sceneRef && gameState === 'PLAYING') {
         sceneRef.physics.world.resume();
     }
 
@@ -594,9 +624,8 @@ function updateOrientation() {
 
 function resizeGame() {
     syncMobileViewport();
-    if (!sceneRef) return;
-
     updateOrientation();
+    if (!sceneRef) return;
     // Запоминаем актуальную ширину даже в портретном режиме: иначе после
     // поворота Phaser продолжает показывать узкий старый canvas.
     const newWidth = calculateWidth();
@@ -862,6 +891,22 @@ function create() {
     });
     if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', scheduleViewportResize);
+    }
+    // Страница может сменить ориентацию до создания сцены либо не послать
+    // resize при возврате из системного экрана поворота.
+    if (isTouchDevice()) {
+        window.matchMedia('(orientation: landscape)')
+            .addEventListener('change', scheduleViewportResize);
+        let lastViewport = '';
+        window.setInterval(() => {
+            if (document.hidden) return;
+            const vp = viewportSize();
+            const state = `${Math.round(vp.width)}:${Math.round(vp.height)}:${isLandscapeViewport()}`;
+            if (state !== lastViewport) {
+                lastViewport = state;
+                scheduleViewportResize();
+            }
+        }, 500);
     }
 
     showCharacterSelect(this);
