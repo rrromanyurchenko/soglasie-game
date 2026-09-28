@@ -20,8 +20,9 @@ const SHADOW_Y = GROUND_Y - 3;
 const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
 const BAKERY_HEIGHT = 540;
-// PNG включает собственный тротуар: низ изображения совмещаем с низом сцены.
-const BAKERY_BOTTOM_Y = H;
+// У PNG снизу около 55 игровых пикселей прозрачного поля: совмещаем
+// с низом сцены именно ВИДИМЫЙ тротуар, а не границу файла.
+const BAKERY_BOTTOM_Y = H + 55;
 // При старте левая граница здания совпадает с краем игрового экрана.
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
@@ -1800,11 +1801,12 @@ function attractBonuses(scene) {
 
 function createBird(scene, x, y, mode) {
     const bird = birds
-        .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_low_1')
+        .create(x, y, mode === 'low' ? 'bird_low_1' : 'bird_dive_1')
         .setDisplaySize(84, 60)
-        // Низкий пролёт летит вправо; верхний начинается горизонтально влево.
-        .setFlipX(mode === 'dive')
+        // Пикирующая чайка всегда использует один кадр, без скачков анимации.
+        .setFlipX(false)
         .setDepth(8);
+    if (mode === 'dive') bird.setRotation(-Math.PI / 2); // клюв влево при подлёте
 
     // Низкий пролёт задевает стоящего, но остаётся выше хитбокса подката.
     fitBody(bird, 58, mode === 'low' ? 52 : 30);
@@ -1843,12 +1845,12 @@ function launchBird(scene) {
             );
             bird.setVelocityX(Math.max(450, baseSpeed + 165));
         } else {
-            const startX = Math.max(gameWidth + 65, player.x + 470);
-            const bird = createBird(scene, startX, 105, 'dive');
-            // Сначала летит ровно на высоте 105; пикирование включается
-            // только после горизонтального подлёта к игроку.
-            bird.setVelocity(-Math.max(450, baseSpeed + 135), 0);
-            bird.diveAtX = player.x + 315;
+            // Начинаем внутри видимой области: горизонтальный участок
+            // действительно виден до перехода в пике.
+            const startX = Math.max(gameWidth - 40, player.x + 480);
+            const bird = createBird(scene, startX, GROUND_Y - 230, 'dive');
+            bird.setVelocity(-Math.max(340, baseSpeed + 30), 0);
+            bird.diveAtX = player.x + 265;
         }
         SoundFx.gull();
     });
@@ -1861,13 +1863,15 @@ function animateBirds(scene, delta) {
             bird.diveStarted = true;
             bird.frameIndex = 0;
             bird.frameElapsed = 0;
-            bird.setTexture('bird_dive_1').setDisplaySize(84, 60).setFlipX(false);
-            fitBody(bird, 58, 30);
-            // Пикирует в сторону игрока, не меняя направления по X.
-            bird.setVelocityY((GROUND_Y - 90 - bird.y) * Math.abs(bird.body.velocity.x) /
+            // Один и тот же b7.png и при подлёте, и при пикировании;
+            // без замены кадров, только плавный разворот и траектория.
+            fitBody(bird, 48, 48);
+            bird.setVelocityY((GROUND_Y - 95 - bird.y) * Math.abs(bird.body.velocity.x) /
                 Math.max(1, bird.x - player.x));
-            bird.setRotation(-0.35);
+            bird.setRotation(-2.35);
         }
+        // Пикирующая чайка неподвижна по кадрам: анимируем только низкий пролёт.
+        if (bird.flightMode === 'dive') return;
         bird.frameElapsed += delta;
         if (bird.frameElapsed < 95) return;
         bird.frameElapsed = 0;
