@@ -33,13 +33,13 @@ const OFFICE_BOTTOM_Y = H;
  */
 const HERO_DISPLAY_HEIGHT = 155;
 
-// Физика одинакова для всех; отдельную суперспособность Артёма добавим позже.
+// Общая физика одинакова; отличается только способность героя.
 const HERO_GRAVITY = 1600;
 const HERO_JUMP_FORCE = -820;
 const HEROES = {
-    artem: { prefix: 'p', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 1, boxes: 0 },
-    maksim: { prefix: 'o', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 1, boxes: 0 },
-    viktoria: { prefix: 'g', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 1, boxes: 1 }
+    artem: { prefix: 'p', gravityY: HERO_GRAVITY, jumpForce: -930, hearts: 2, shields: 0, boxes: 0 },
+    maksim: { prefix: 'o', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 2, shields: 1, boxes: 0 },
+    viktoria: { prefix: 'g', gravityY: HERO_GRAVITY, jumpForce: HERO_JUMP_FORCE, hearts: 2, shields: 0, boxes: 0 }
 };
 
 const ASSETS = {
@@ -788,6 +788,37 @@ function playerStartX() {
 
 function create() {
     sceneRef = this;
+    // На мобильном Phaser.Scale.NONE рисует canvas растянутым CSS, но
+    // координаты Phaser Input могут остаться с прежним масштабом.
+    // Обрабатываем клики по окнам по реальному DOM-прямоугольнику canvas.
+    if (isTouchDevice()) {
+        this.game.canvas.addEventListener('pointerdown', event => {
+            if (portraitBlocked || !currentUI || !currentUI.windowImage ||
+                !currentUI.windowImage.active) return;
+            const rect = this.game.canvas.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const x = (event.clientX - rect.left) * gameWidth / rect.width;
+            const y = (event.clientY - rect.top) * H / rect.height;
+            // Проверяем зоны в обратном порядке (верхняя зона — последняя).
+            const zones = currentUI.windowHotspots || [];
+            for (let i = zones.length - 1; i >= 0; i--) {
+                const zone = zones[i];
+                if (!zone.object.active) continue;
+                const centerX = currentUI.x + (zone.x - 0.5) * currentUI.windowImage.displayWidth;
+                const centerY = currentUI.y + (zone.y - 0.5) * currentUI.windowImage.displayHeight;
+                const halfW = zone.width * currentUI.windowImage.displayWidth / 2;
+                const halfH = zone.height * currentUI.windowImage.displayHeight / 2;
+                if (Math.abs(x - centerX) <= halfW && Math.abs(y - centerY) <= halfH) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    zone.callback();
+                    return;
+                }
+            }
+            // Пока открыто окно, нельзя срабатывать смещённым Phaser-зонам.
+            event.stopImmediatePropagation();
+        }, true);
+    }
 
     calculateHeroScales(this);
     createBackgrounds(this);
@@ -1261,6 +1292,7 @@ function addWindowHotspot(
     windowData.ui.add(hotspot);
     windowData.ui.windowHotspots.push({
         object: hotspot,
+        callback,
         x: centerXFraction,
         y: centerYFraction,
         width: widthFraction,
@@ -1379,6 +1411,16 @@ function showCharacterSelect(scene) {
             0.13,
             () => startRace(scene, item.hero)
         );
+        // Вся карточка персонажа тоже выбирает его: на телефоне легче попасть.
+        addWindowHotspot(
+            scene,
+            windowData,
+            item.x,
+            0.38,
+            0.20,
+            0.31,
+            () => startRace(scene, item.hero)
+        );
     });
 }
 
@@ -1420,8 +1462,8 @@ function startRace(scene, heroKey) {
 
     // HUD отображает текущий остаток каждого ресурса: без незаметного
     // ограничения в 2/3 единицы для повторных подборов.
-    hearts = Math.max(2, hero.hearts);
-    shields = 0;
+    hearts = hero.hearts;
+    shields = hero.shields;
     boxes = hero.boxes;
     scene.time.timeScale = 1;
     scene.tweens.timeScale = 1;
@@ -1651,7 +1693,7 @@ function update(time, delta) {
 
     syncPlayerView();
 
-    if (selectedHero === 'maksim') {
+    if (selectedHero === 'viktoria') {
         attractBonuses(this);
     }
 
@@ -1933,11 +1975,10 @@ function attractBonuses(scene) {
             bonus.y
         );
 
-        // Магнит работает при прыжке и при беге по платформе,
-        // но не стягивает высокие бонусы на ровную дорогу.
-        if (distance < 185 && player.y < GROUND_Y - 30) {
-            scene.physics.moveToObject(bonus, player, 380);
-            bonus.isMagnetized = true;
+        // Виктория подбирает благо поблизости даже с земли и без
+        // точного касания предмета. Остальные подбирают по коллизии.
+        if (distance < 270) {
+            getBonus(player, bonus);
         }
     });
 }
@@ -2109,7 +2150,7 @@ function hitObstacle(hero, obstacle) {
         boxes--;
         destroyWithShadow(obstacle);
         SoundFx.bonus();
-        flashPlayer(this, 0x00c3ff);
+        flashPlayer(this, 0xff8400);
         updateHud();
         return;
     }
@@ -2118,7 +2159,7 @@ function hitObstacle(hero, obstacle) {
         shields--;
         destroyWithShadow(obstacle);
         SoundFx.bonus();
-        flashPlayer(this, 0x00ff66);
+        flashPlayer(this, 0xff8400);
         updateHud();
         return;
     }
@@ -2127,6 +2168,7 @@ function hitObstacle(hero, obstacle) {
     if (hearts > 0) {
         hearts--;
         destroyWithShadow(obstacle);
+        flashPlayer(this, 0xff8400);
         updateHud();
         if (hearts === 0) {
             showGameOver(this);
