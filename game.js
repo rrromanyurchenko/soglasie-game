@@ -20,9 +20,8 @@ const SHADOW_Y = GROUND_Y - 3;
 const OBSTACLE_BOTTOM_Y = GROUND_Y - 4;
 
 const BAKERY_HEIGHT = 540;
-// На скриншотах H — слишком высоко, H + 55 — слишком низко.
-// Ставим край кондитерского тротуара на уровень дороги между ними.
-const BAKERY_BOTTOM_Y = H + 28;
+// Поднимаем кондитерскую ещё на 20 игровых пикселей по отзыву.
+const BAKERY_BOTTOM_Y = H + 8;
 // При старте левая граница здания совпадает с краем игрового экрана.
 // Офисный PNG содержит собственную ограду и тротуар.
 const OFFICE_HEIGHT = H;
@@ -1808,8 +1807,9 @@ function createBird(scene, x, y, mode) {
         .setFlipX(mode === 'dive')
         .setDepth(8);
 
-    // Низкий пролёт задевает стоящего, но проходит над присевшим.
-    fitBody(bird, 58, mode === 'low' ? 36 : 30);
+    // Низкий пролёт должен пересекать хитбокс стоящего героя.
+    // Приседание отдельно исключено из урона в hitObstacle().
+    fitBody(bird, 58, mode === 'low' ? 52 : 30);
     bird.body.allowGravity = false;
     bird.obstacleType = 'top';
     bird.flightMode = mode;
@@ -1835,19 +1835,19 @@ function launchBird(scene) {
         warningText.setVisible(false);
 
         if (mode === 'low') {
-            // Вылетает именно из-за левого края, а не из-за спины героя.
-            // Центр и хитбокс подняты над присевшим персонажем.
+            // Из-за левого края летит на уровне головы стоящего:
+            // при высоте хитбокса 52 он пересекает тело героя.
             const bird = createBird(
                 scene,
                 -65,
-                GROUND_Y - 137,
+                GROUND_Y - 103,
                 'low'
             );
             bird.setVelocityX(Math.max(450, baseSpeed + 165));
         } else {
-            // Начинаем внутри видимой области: горизонтальный участок
-            // действительно виден до перехода в пике.
-            const startX = Math.max(gameWidth - 40, player.x + 480);
+            // Вылетает целиком из-за правого края; до пикирования
+            // летит горизонтально отражёнными кадрами низкой чайки.
+            const startX = Math.max(gameWidth + 75, player.x + 480);
             const bird = createBird(scene, startX, GROUND_Y - 285, 'dive');
             bird.setVelocity(-Math.max(340, baseSpeed + 30), 0);
             bird.diveAtX = player.x + 265;
@@ -1863,7 +1863,7 @@ function animateBirds(scene, delta) {
             bird.diveStarted = true;
             bird.frameIndex = 0;
             bird.frameElapsed = 0;
-            // Горизонтальные кадры заканчиваются; теперь кадры пикирования.
+            // При пикировании только один кадр, без переключения b7–b9.
             bird.setTexture('bird_dive_1').setDisplaySize(84, 60);
             bird.setFlipX(false);
             bird.setAngle(0);
@@ -1871,22 +1871,20 @@ function animateBirds(scene, delta) {
             bird.setVelocityY((GROUND_Y - 95 - bird.y) * Math.abs(bird.body.velocity.x) /
                 Math.max(1, bird.x - player.x));
         }
+        // После перехода в пике фиксируем один кадр, не анимируем его.
+        if (bird.flightMode === 'dive' && bird.diveStarted) return;
         bird.frameElapsed += delta;
         if (bird.frameElapsed < 120) return;
         bird.frameElapsed = 0;
-        const diving = bird.flightMode === 'dive' && bird.diveStarted;
-        const frames = diving
-            ? ['bird_dive_1', 'bird_dive_2', 'bird_dive_3']
-            : ['bird_low_1', 'bird_low_2', 'bird_low_3', 'bird_low_4'];
+        const frames = ['bird_low_1', 'bird_low_2', 'bird_low_3', 'bird_low_4'];
         bird.frameIndex = (bird.frameIndex + 1) % frames.length;
         const key = frames[bird.frameIndex];
         if (scene.textures.exists(key)) {
             bird.setTexture(key);
-            bird.setFlipX(bird.flightMode === 'dive' && !diving);
-            // Все кадры держим в одном размере и пересчитываем хитбокс.
+            bird.setFlipX(bird.flightMode === 'dive');
+            // Для низкой чайки сохраняем хитбокс при каждом кадре.
             bird.setDisplaySize(84, 60);
-            fitBody(bird, diving ? 48 : 58,
-                diving ? 48 : bird.flightMode === 'low' ? 36 : 30);
+            fitBody(bird, 58, bird.flightMode === 'low' ? 52 : 30);
         }
     });
 }
