@@ -2,11 +2,8 @@
 
 /* «Согласие» — праздничный раннер. Phaser 3.60. */
 
-const WIN_FORM_URL = 'https://33.soglasie.ru/win';
-
-const PROMO_URL =
-    'https://www.soglasie.ru/puteshestviya/kalkulyator-strahovaniya-vyezjayushih-za-rubej/' +
-    '?utm_campaign=dr_33&utm_medium=igra_dr&utm_content=promo_code_vzr';
+// Кнопка на экране победы ведёт в калькулятор страхования путешествий.
+const PROMO_URL = 'https://www.soglasie.ru/puteshestviya/kalkulyator-strahovaniya-vyezjayushih-za-rubej/?utm_campaign=dr_33&utm_medium=igra_dr&utm_content=promo_code_vzr';
 
 const BASE_W = 960;
 const H = 540;
@@ -58,7 +55,7 @@ const ASSETS = {
 
     choose_screen: 'https://static.tildacdn.com/tild6132-3837-4839-b332-383362333666/choose.png',
     die_screen: 'https://static.tildacdn.com/tild6530-6462-4966-a131-326531393162/die2.png',
-    win_screen: 'https://static.tildacdn.com/tild3562-6264-4561-b131-363764646361/win.png',
+    win_screen: 'https://static.tildacdn.com/tild3830-6234-4332-a533-656634356631/win2.png',
 
     hud_bar: 'https://static.tildacdn.com/tild3439-3938-4165-b038-653031613135/distance_time.png',
     hud_heart: 'https://static.tildacdn.com/tild3161-3133-4566-a435-353934316363/heart.png',
@@ -1965,19 +1962,18 @@ function getBonus(hero, bonus) {
 }
 
 function attractBonuses(scene) {
+    // У Виктории магнит действует только при почти-касании хитбоксов:
+    // 10 игровых пикселей при 0.08 м/пиксель — меньше одного метра.
+    const reach = 10;
+    if (!player || !player.body) return;
+    const hero = player.body;
+
     bonuses.getChildren().forEach(bonus => {
-        if (!bonus.active) return;
-
-        const distance = Phaser.Math.Distance.Between(
-            player.x,
-            player.y,
-            bonus.x,
-            bonus.y
-        );
-
-        // Виктория подбирает благо поблизости даже с земли и без
-        // точного касания предмета. Остальные подбирают по коллизии.
-        if (distance < 270) {
+        if (!bonus.active || !bonus.body || !bonus.body.enable) return;
+        const item = bonus.body;
+        const gapX = Math.max(0, item.x - hero.right, hero.x - item.right);
+        const gapY = Math.max(0, item.y - hero.bottom, hero.y - item.bottom);
+        if (Math.hypot(gapX, gapY) <= reach) {
             getBonus(player, bonus);
         }
     });
@@ -2275,17 +2271,21 @@ function showGameOver(scene) {
         distanceLabel
     ]);
 
-    // Билет с промокодом.
+    // На iPhone новая вкладка из обработчика canvas может блокироваться
+    // Safari. На телефоне переходим в той же вкладке прямо по касанию;
+    // на десктопе сохраняем открытие новой вкладки.
     addWindowHotspot(
         scene,
         windowData,
         0.79, 0.47,
         0.34, 0.20,
-        () => window.open(
-            PROMO_URL,
-            '_blank',
-            'noopener,noreferrer'
-        )
+        () => {
+            if (isTouchDevice()) {
+                window.location.assign(PROMO_URL);
+            } else {
+                window.open(PROMO_URL, '_blank', 'noopener,noreferrer');
+            }
+        }
     );
 
     // Оранжевая кнопка.
@@ -2462,14 +2462,14 @@ function showVictoryCard(scene) {
 
     if (!windowData) return;
 
-    // Оранжевая кнопка «ЗАБРАТЬ СВОЙ ПОДАРОК».
+    // «ЗАБРАТЬ СВОЙ ПОДАРОК»: открываем калькулятор в этой же вкладке.
+    // Во встроенном браузере iPhone новая вкладка может блокироваться.
     addWindowHotspot(
         scene,
         windowData,
         0.75, 0.75,
         0.44, 0.18,
-        // Во встроенном браузере iPhone новая вкладка может блокироваться.
-        () => window.location.assign(WIN_FORM_URL)
+        () => { window.location.href = PROMO_URL; }
     );
 
     // Нижняя текстовая ссылка «Сыграть ещё раз».
